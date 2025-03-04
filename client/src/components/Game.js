@@ -223,11 +223,8 @@ const Game = ({ playerName }) => {
                   text.setOrigin(0.5);
                   text.setDepth(2); // Above frogs
                   
-                  // Calculate initial rotation
-                  const dx = fly.targetX - fly.x;
-                  const dy = fly.targetY - fly.y;
-                  const angle = Math.atan2(dy, dx) + Math.PI/2; // Offset by 90 degrees
-                  text.rotation = angle;
+                  // Set initial rotation from fly's angle
+                  text.rotation = fly.angle + Math.PI/2; // Offset by 90 degrees to face movement direction
                   
                   this.flies.set(fly.id, text);
                 }
@@ -554,11 +551,8 @@ const Game = ({ playerName }) => {
               text.setOrigin(0.5);
               text.setDepth(2); // Above frogs
               
-              // Calculate initial rotation
-              const dx = fly.targetX - fly.x;
-              const dy = fly.targetY - fly.y;
-              const angle = Math.atan2(dy, dx) + Math.PI/2; // Offset by 90 degrees
-              text.rotation = angle;
+              // Set initial rotation from fly's angle
+              text.rotation = fly.angle + Math.PI/2; // Offset by 90 degrees to face movement direction
               
               this.flies.set(fly.id, text);
             });
@@ -567,14 +561,30 @@ const Game = ({ playerName }) => {
               flies.forEach(fly => {
                 const sprite = this.flies.get(fly.id);
                 if (sprite) {
-                  // Calculate angle between current position and target
-                  const dx = fly.targetX - fly.x;
-                  const dy = fly.targetY - fly.y;
-                  const angle = Math.atan2(dy, dx) + Math.PI/2; // Offset by 90 degrees
+                  // Calculate the shortest rotation path
+                  let targetRotation = fly.angle + Math.PI/2;
+                  let currentRotation = sprite.rotation;
                   
-                  sprite.x = fly.x;
-                  sprite.y = fly.y;
-                  sprite.rotation = angle;
+                  // Normalize angles to [-PI, PI]
+                  while (targetRotation > Math.PI) targetRotation -= Math.PI * 2;
+                  while (targetRotation < -Math.PI) targetRotation += Math.PI * 2;
+                  while (currentRotation > Math.PI) currentRotation -= Math.PI * 2;
+                  while (currentRotation < -Math.PI) currentRotation += Math.PI * 2;
+                  
+                  // Find shortest rotation direction
+                  let rotationDiff = targetRotation - currentRotation;
+                  if (rotationDiff > Math.PI) rotationDiff -= Math.PI * 2;
+                  if (rotationDiff < -Math.PI) rotationDiff += Math.PI * 2;
+                  
+                  // Smoothly interpolate position and rotation
+                  this.tweens.add({
+                    targets: sprite,
+                    x: fly.x,
+                    y: fly.y,
+                    rotation: currentRotation + rotationDiff,
+                    duration: 1000/30, // Slower updates for smoother movement
+                    ease: 'Sine.easeInOut'
+                  });
                 }
               });
             });

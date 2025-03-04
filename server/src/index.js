@@ -145,28 +145,28 @@ function generateLilyPads() {
 
 // Generate a new fly with world bounds
 function generateFly() {
-  // Generate initial position
-  const x = Math.random() * gameState.worldSize.width;
-  const y = Math.random() * gameState.worldSize.height;
+  const padding = 100;
   
-  // Always generate target far away from spawn position
-  const angle = Math.random() * Math.PI * 2;
-  const distance = 300; // Fixed distance for predictable behavior
+  // Create different speed tiers for flies
+  const speedTiers = [
+    { min: 3, max: 4 },    // Normal flies (40% chance)
+    { min: 4.5, max: 6 },  // Fast flies (35% chance)
+    { min: 7, max: 8 }     // Super fast flies (25% chance)
+  ];
   
-  const targetX = x + Math.cos(angle) * distance;
-  const targetY = y + Math.sin(angle) * distance;
-  
-  // Ensure target is within bounds
-  const boundedTargetX = Math.max(0, Math.min(gameState.worldSize.width, targetX));
-  const boundedTargetY = Math.max(0, Math.min(gameState.worldSize.height, targetY));
+  const rand = Math.random();
+  const speedTier = rand < 0.4 ? speedTiers[0] :
+                    rand < 0.75 ? speedTiers[1] :
+                    speedTiers[2];
   
   return {
-    id: `fly-${Date.now()}-${Math.random()}`, // Ensure unique IDs
-    x: x,
-    y: y,
-    targetX: boundedTargetX,
-    targetY: boundedTargetY,
-    speed: 2 + Math.random() * 2 // Random speed between 2 and 4
+    id: `fly-${Date.now()}-${Math.random()}`,
+    x: padding + Math.random() * (gameState.worldSize.width - padding * 2),
+    y: padding + Math.random() * (gameState.worldSize.height - padding * 2),
+    angle: Math.random() * Math.PI * 2,
+    angularVelocity: (Math.random() - 0.5) * 0.1,
+    speed: speedTier.min + Math.random() * (speedTier.max - speedTier.min),
+    nextDirectionChange: Date.now() + 2000 + Math.random() * 3000
   };
 }
 
@@ -412,42 +412,58 @@ io.on('connection', (socket) => {
 
 // Update fly positions periodically
 setInterval(() => {
+  const currentTime = Date.now();
+  
   gameState.flies.forEach(fly => {
-    const dx = fly.targetX - fly.x;
-    const dy = fly.targetY - fly.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+    // Change direction randomly
+    if (currentTime >= fly.nextDirectionChange) {
+      // Smoother direction changes
+      fly.angularVelocity = (Math.random() - 0.5) * 0.1; // Reduced from 0.4 to 0.1
+      fly.nextDirectionChange = currentTime + 2000 + Math.random() * 3000; // Changed to 2-5 seconds
+    }
+
+    // Update angle for curved movement
+    fly.angle += fly.angularVelocity;
     
-    // Pick new target when close to current target
-    if (distance < 5) {
-      const angle = Math.random() * Math.PI * 2;
-      const targetDistance = 300;
-      const newTargetX = fly.x + Math.cos(angle) * targetDistance;
-      const newTargetY = fly.y + Math.sin(angle) * targetDistance;
-      
-      // Keep target within bounds
-      fly.targetX = Math.max(0, Math.min(gameState.worldSize.width, newTargetX));
-      fly.targetY = Math.max(0, Math.min(gameState.worldSize.height, newTargetY));
+    // Move in current direction
+    fly.x += Math.cos(fly.angle) * fly.speed;
+    fly.y += Math.sin(fly.angle) * fly.speed;
+    
+    // Reduced random movement
+    fly.x += (Math.random() - 0.5) * 0.2; // Reduced from 0.5 to 0.2
+    fly.y += (Math.random() - 0.5) * 0.2; // Reduced from 0.5 to 0.2
+    
+    // Bounce off world boundaries with proper angle reflection
+    const padding = 50;
+    if (fly.x < padding) {
+      fly.x = padding;
+      fly.angle = Math.PI - fly.angle;
+      fly.angularVelocity *= -0.5; // Dampen rotation on bounce
+    } else if (fly.x > gameState.worldSize.width - padding) {
+      fly.x = gameState.worldSize.width - padding;
+      fly.angle = Math.PI - fly.angle;
+      fly.angularVelocity *= -0.5; // Dampen rotation on bounce
     }
     
-    // Always move towards target with the fly's speed
-    if (distance > 0) {  // Prevent division by zero
-      const moveX = (dx / distance) * fly.speed;
-      const moveY = (dy / distance) * fly.speed;
-      
-      fly.x += moveX;
-      fly.y += moveY;
+    if (fly.y < padding) {
+      fly.y = padding;
+      fly.angle = -fly.angle;
+      fly.angularVelocity *= -0.5; // Dampen rotation on bounce
+    } else if (fly.y > gameState.worldSize.height - padding) {
+      fly.y = gameState.worldSize.height - padding;
+      fly.angle = -fly.angle;
+      fly.angularVelocity *= -0.5; // Dampen rotation on bounce
     }
-    
-    // Add small random movement
-    fly.x += (Math.random() - 0.5);
-    fly.y += (Math.random() - 0.5);
-    
-    // Ensure flies stay within bounds
-    fly.x = Math.max(0, Math.min(gameState.worldSize.width, fly.x));
-    fly.y = Math.max(0, Math.min(gameState.worldSize.height, fly.y));
   });
   
-  io.emit('fliesUpdated', gameState.flies);
+  if (gameState.flies.length > 0) {
+    io.emit('fliesUpdated', gameState.flies.map(fly => ({
+      id: fly.id,
+      x: fly.x,
+      y: fly.y,
+      angle: fly.angle
+    })));
+  }
 }, 1000 / 60);
 
 const PORT = process.env.PORT || 4000;
