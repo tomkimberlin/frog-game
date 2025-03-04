@@ -194,13 +194,16 @@ io.on('connection', (socket) => {
     };
     gameState.players.set(socket.id, player);
     
-    // Send complete game state including world size
+    // Send complete game state to new player
     socket.emit('gameState', {
       players: Array.from(gameState.players.values()),
       flies: gameState.flies,
       lilyPads: gameState.lilyPads,
       worldSize: gameState.worldSize
     });
+
+    // Broadcast new player to all other players
+    socket.broadcast.emit('playerJoined', player);
   });
 
   // Handle player movement
@@ -258,8 +261,10 @@ io.on('connection', (socket) => {
 
   // Handle disconnection
   socket.on('disconnect', () => {
-    gameState.players.delete(socket.id);
-    io.emit('playerDisconnected', socket.id);
+    if (gameState.players.has(socket.id)) {
+      gameState.players.delete(socket.id);
+      io.emit('playerDisconnected', socket.id);
+    }
   });
 });
 

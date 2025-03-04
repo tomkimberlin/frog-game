@@ -218,8 +218,43 @@ const Game = ({ playerName }) => {
             socket.on('playerDied', (id) => {
               const player = this.players.get(id);
               if (player) {
+                if (player.nameText) {
+                  player.nameText.destroy();
+                }
                 player.destroy();
                 this.players.delete(id);
+              }
+            });
+
+            socket.on('playerDisconnected', (id) => {
+              const player = this.players.get(id);
+              if (player) {
+                if (player.nameText) {
+                  player.nameText.destroy();
+                }
+                player.destroy();
+                this.players.delete(id);
+              }
+            });
+
+            socket.on('playerJoined', (player) => {
+              if (!this.players.has(player.id)) {
+                const text = this.add.text(player.x, player.y, '🐸', { 
+                  font: '32px Arial',
+                  align: 'center'
+                });
+                text.setOrigin(0.5);
+                text.setScale(player.size * 1.5);
+                text.setDepth(2); // Above flies
+                
+                // Add name label for the new player
+                const style = { font: '16px Arial', fill: '#fff', stroke: '#000000', strokeThickness: 4 };
+                const nameText = this.add.text(player.x, player.y - 30, player.name, style);
+                nameText.setOrigin(0.5);
+                nameText.setDepth(3); // Above everything
+                text.nameText = nameText;
+                
+                this.players.set(player.id, text);
               }
             });
 
