@@ -164,12 +164,11 @@ const Game = ({ playerName }) => {
               state.players.forEach(player => {
                 if (!this.players.has(player.id)) {
                   const text = this.add.text(player.x, player.y, '🐸', { 
-                    font: '32px Arial',
+                    font: `${Math.round(32 * player.size)}px Arial`,
                     align: 'center'
                   });
                   text.setOrigin(0.5);
-                  text.setScale(player.size * 1.5);
-                  text.setDepth(2); // Above flies
+                  text.setDepth(1); // Below flies
                   
                   // Add name label for all players
                   const style = { font: '16px Arial', fill: '#fff', stroke: '#000000', strokeThickness: 4 };
@@ -222,7 +221,7 @@ const Game = ({ playerName }) => {
                     align: 'center'
                   });
                   text.setOrigin(0.5);
-                  text.setDepth(1); // Ensure flies are visible above lily pads
+                  text.setDepth(2); // Above frogs
                   
                   // Calculate initial rotation
                   const dx = fly.targetX - fly.x;
@@ -341,9 +340,29 @@ const Game = ({ playerName }) => {
                 });
                 
                 // Update health
+                const oldHealth = player.currentHealth;
                 player.currentHealth = health;
                 player.maxHealth = maxHealth;
                 this.updateHPBar(player);
+                
+                if (health < oldHealth) {
+                  // Show healing number if healed
+                  const healText = this.add.text(player.x, player.y - 40, `+${Math.round(oldHealth - health)}`, {
+                    font: 'bold 20px Arial',
+                    fill: '#00ff00'
+                  });
+                  healText.setOrigin(0.5);
+                  
+                  // Animate heal number floating up and fading
+                  this.tweens.add({
+                    targets: healText,
+                    y: player.y - 80,
+                    alpha: 0,
+                    duration: 1000,
+                    ease: 'Power2',
+                    onComplete: () => healText.destroy()
+                  });
+                }
               }
             });
 
@@ -419,12 +438,11 @@ const Game = ({ playerName }) => {
             socket.on('playerJoined', (player) => {
               if (!this.players.has(player.id)) {
                 const text = this.add.text(player.x, player.y, '🐸', { 
-                  font: '32px Arial',
+                  font: `${Math.round(32 * player.size)}px Arial`,
                   align: 'center'
                 });
                 text.setOrigin(0.5);
-                text.setScale(player.size * 1.5);
-                text.setDepth(2); // Above flies
+                text.setDepth(1); // Below flies
                 
                 // Add name and level label for the new player
                 const style = { font: '16px Arial', fill: '#fff', stroke: '#000000', strokeThickness: 4 };
@@ -534,7 +552,7 @@ const Game = ({ playerName }) => {
                 align: 'center'
               });
               text.setOrigin(0.5);
-              text.setDepth(1); // Ensure flies are visible above lily pads
+              text.setDepth(2); // Above frogs
               
               // Calculate initial rotation
               const dx = fly.targetX - fly.x;

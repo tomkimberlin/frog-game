@@ -194,11 +194,13 @@ function findUnoccupiedLilyPad() {
 
 function getRequiredXPForLevel(level) {
   // Each level requires more XP than the last
-  // Level 1->2: 3 flies
-  // Level 2->3: 5 flies
-  // Level 3->4: 7 flies
+  // Level 1->2: 5 flies
+  // Level 2->3: 8 flies
+  // Level 3->4: 11 flies
+  // Level 4->5: 14 flies
   // And so on...
-  return (level * 2) + 1;
+  if (level >= 10) return Infinity; // Cap at level 10
+  return (level * 3) + 2;
 }
 
 function getLevelFromXP(xp) {
@@ -206,18 +208,19 @@ function getLevelFromXP(xp) {
   let level = 1;
   let xpRequired = 0;
   
-  while (true) {
+  while (level < 10) { // Cap at level 10
     xpRequired += getRequiredXPForLevel(level);
     if (xp < xpRequired) {
       return level;
     }
     level++;
   }
+  return 10; // Maximum level
 }
 
 function getSizeForLevel(level) {
-  // Start at size 0.7, each level increases size by 0.1 (reduced from 0.2)
-  return 0.7 + ((level - 1) * 0.1);
+  // Start at size 0.7, each level increases size by 0.05 (reduced from 0.1)
+  return 0.7 + ((level - 1) * 0.05);
 }
 
 io.on('connection', (socket) => {
