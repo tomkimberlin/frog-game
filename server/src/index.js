@@ -451,19 +451,31 @@ io.on('connection', (socket) => {
       // Remove caught fly
       gameState.flies.splice(flyIndex, 1);
       
-      // Add XP and check for level up
-      player.xp++;
-      const newLevel = getLevelFromXP(player.xp);
-      const didLevelUp = newLevel > player.level;
+      let didLevelUp = false;
+      let didHeal = false;
+      const healAmount = 10;
       
-      if (didLevelUp) {
-        console.log(`[LEVEL] Player ${player.name} leveled up to ${newLevel}`);
-        // Level up! Update size and max health
-        player.level = newLevel;
-        player.size = getSizeForLevel(newLevel);
-        player.maxHealth = 50 + ((newLevel - 1) * 10); // 50 base HP + 10 per level
-        player.health = player.maxHealth; // Only heal on level up
-        console.log(`[LEVEL] New stats - HP: ${player.health}/${player.maxHealth}, Size: ${player.size}`);
+      if (player.health < player.maxHealth) {
+        // Heal the player if not at full health
+        const oldHealth = player.health;
+        player.health = Math.min(player.maxHealth, player.health + healAmount);
+        didHeal = true;
+        console.log(`[HEAL] Player ${player.name} healed from ${oldHealth} to ${player.health}`);
+      } else {
+        // Only gain XP if at full health
+        player.xp++;
+        const newLevel = getLevelFromXP(player.xp);
+        didLevelUp = newLevel > player.level;
+        
+        if (didLevelUp) {
+          console.log(`[LEVEL] Player ${player.name} leveled up to ${newLevel}`);
+          // Level up! Update size and max health
+          player.level = newLevel;
+          player.size = getSizeForLevel(newLevel);
+          player.maxHealth = 50 + ((newLevel - 1) * 10); // 50 base HP + 10 per level
+          player.health = player.maxHealth; // Full heal on level up
+          console.log(`[LEVEL] New stats - HP: ${player.health}/${player.maxHealth}, Size: ${player.size}`);
+        }
       }
       
       io.emit('flyCaught', { 
@@ -474,7 +486,9 @@ io.on('connection', (socket) => {
         maxHealth: player.maxHealth,
         level: player.level,
         xp: player.xp,
-        didLevelUp
+        didLevelUp,
+        didHeal,
+        healAmount: didHeal ? healAmount : 0
       });
       
       // Generate one new fly when one is caught

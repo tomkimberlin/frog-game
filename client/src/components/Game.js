@@ -574,7 +574,7 @@ const Game = ({ playerName }) => {
               }
             });
 
-            socket.on('flyCaught', ({ flyId, playerId, size, health, maxHealth, level, xp, didLevelUp }) => {
+            socket.on('flyCaught', ({ flyId, playerId, size, health, maxHealth, level, xp, didLevelUp, didHeal, healAmount }) => {
               const fly = this.flies.get(flyId);
               if (fly) {
                 fly.destroy();
@@ -616,13 +616,16 @@ const Game = ({ playerName }) => {
                     ease: 'Power2',
                     onComplete: () => levelUpText.destroy()
                   });
-                } else if (health > oldHealth) {
-                  // Show healing number if healed
-                  const healText = this.add.text(player.x, player.y - 40, `+${Math.round(health - oldHealth)}`, {
+                } else if (didHeal) {
+                  // Show healing number in green
+                  const healText = this.add.text(player.x, player.y - 40, `+${healAmount}`, {
                     font: 'bold 20px Arial',
-                    fill: '#00ff00'
+                    fill: '#00ff00',
+                    stroke: '#000000',
+                    strokeThickness: 3
                   });
                   healText.setOrigin(0.5);
+                  healText.setDepth(3);
                   
                   // Animate heal number floating up and fading
                   this.tweens.add({
