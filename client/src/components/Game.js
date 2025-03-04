@@ -244,7 +244,29 @@ const Game = ({ playerName }) => {
                                        padBounds.top > cameraView.bottom);
                       
                       if (isVisible) {
-                        socket.emit('moveToLilyPad', pad.id);
+                        // Check if any other frog is on this lily pad
+                        let isOccupied = false;
+                        const occupyRadius = lilypadRadius * 0.8; // Allow some margin
+                        
+                        this.players.forEach((otherPlayer, id) => {
+                          if (id !== socket.id) { // Don't check against self
+                            const playerDx = otherPlayer.x - sprite.x;
+                            const playerDy = otherPlayer.y - sprite.y;
+                            const playerDistance = Math.sqrt(playerDx * playerDx + playerDy * playerDy);
+                            
+                            if (playerDistance < occupyRadius) {
+                              isOccupied = true;
+                            }
+                          }
+                        });
+
+                        if (!isOccupied) {
+                          socket.emit('moveToLilyPad', pad.id);
+                        } else {
+                          // Show a visual feedback that the pad is occupied
+                          sprite.setTint(0xff0000);
+                          this.time.delayedCall(200, () => sprite.clearTint());
+                        }
                       }
                     }
                   });
