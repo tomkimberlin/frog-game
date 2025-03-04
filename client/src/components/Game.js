@@ -140,17 +140,17 @@ const Game = ({ playerName }) => {
                   text.setScale(player.size * 1.5);
                   text.setDepth(2); // Above flies
                   
+                  // Add name label for all players
+                  const style = { font: '16px Arial', fill: '#fff', stroke: '#000000', strokeThickness: 4 };
+                  const nameText = this.add.text(player.x, player.y - 30, player.name, style);
+                  nameText.setOrigin(0.5);
+                  nameText.setDepth(3); // Above everything
+                  text.nameText = nameText;
+                  
                   this.players.set(player.id, text);
                   
                   if (player.id === socket.id) {
                     this.localPlayer = text;
-                    // Add name label
-                    const style = { font: '16px Arial', fill: '#fff', stroke: '#000000', strokeThickness: 4 };
-                    const nameText = this.add.text(player.x, player.y - 30, playerName, style);
-                    nameText.setOrigin(0.5);
-                    nameText.setDepth(3); // Above everything
-                    this.localPlayer.nameText = nameText;
-                    
                     // Set up camera follow with lerp (smooth follow)
                     this.cameras.main.setZoom(1); // Ensure zoom is reset
                     
@@ -188,7 +188,7 @@ const Game = ({ playerName }) => {
               const player = this.players.get(id);
               if (player) {
                 this.tweens.add({
-                  targets: [player, player.nameText], // Move both frog and name text
+                  targets: player,
                   x: x,
                   y: y,
                   duration: 500,
@@ -198,6 +198,7 @@ const Game = ({ playerName }) => {
                 if (player.nameText) {
                   this.tweens.add({
                     targets: player.nameText,
+                    x: x,
                     y: y - 30, // Keep the name above the frog
                     duration: 500,
                     ease: 'Power2'
