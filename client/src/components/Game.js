@@ -100,7 +100,7 @@ const Game = ({ playerName }) => {
               shadowColor: '#000000',
               shadowBlur: 4
             };
-            const instructions = this.add.text(20, 20, 'Left Click: Move to nearby lily pad\nRight Click: Extend tongue\nPress H to toggle instructions', instructionsStyle);
+            const instructions = this.add.text(20, 20, 'Left Click: Move to nearby lily pad\nRight Click: Extend tongue\nPress H to toggle instructions\nPress L to toggle leaderboard', instructionsStyle);
             instructions.setScrollFactor(0); // Fix to camera
             instructions.setDepth(1000); // Ensure it's always on top
 
@@ -108,6 +108,77 @@ const Game = ({ playerName }) => {
             this.input.keyboard.on('keydown-H', () => {
               instructions.setVisible(!instructions.visible);
             });
+
+            // Create leaderboard UI
+            const leaderboardStyle = {
+              font: 'bold 20px Arial',
+              fill: '#ffffff',
+              stroke: '#000000',
+              strokeThickness: 3,
+              align: 'right',
+              shadowOffsetX: 2,
+              shadowOffsetY: 2,
+              shadowColor: '#000000',
+              shadowBlur: 4
+            };
+            
+            this.leaderboardTitle = this.add.text(0, 20, '🏆 Top Frogs 🏆', leaderboardStyle);
+            this.leaderboardTitle.setScrollFactor(0);
+            this.leaderboardTitle.setDepth(1000);
+            
+            this.leaderboardText = this.add.text(0, 50, '', {
+              ...leaderboardStyle,
+              font: '18px Arial'
+            });
+            this.leaderboardText.setScrollFactor(0);
+            this.leaderboardText.setDepth(1000);
+
+            // Position leaderboard in top right with padding
+            const updateLeaderboardPosition = () => {
+              const padding = 20;
+              this.leaderboardTitle.setPosition(
+                this.cameras.main.width - this.leaderboardTitle.width - padding,
+                padding
+              );
+              this.leaderboardText.setPosition(
+                this.cameras.main.width - this.leaderboardText.width - padding,
+                this.leaderboardTitle.y + this.leaderboardTitle.height + 5
+              );
+            };
+
+            // Update leaderboard text
+            this.updateLeaderboard = () => {
+              if (!this.players) return;
+              
+              // Convert players Map to array and sort by level
+              const sortedPlayers = Array.from(this.players.values())
+                .map(player => ({
+                  name: player.nameText.text.split(' (')[0],
+                  level: player.level
+                }))
+                .sort((a, b) => b.level - a.level)
+                .slice(0, 3);  // Get top 3
+
+              // Format leaderboard text
+              const leaderboardContent = sortedPlayers
+                .map((player, index) => {
+                  const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉';
+                  return `${medal} ${player.name} (Lvl ${player.level})`;
+                })
+                .join('\n');
+
+              this.leaderboardText.setText(leaderboardContent);
+              updateLeaderboardPosition();
+            };
+
+            // Toggle leaderboard visibility with L key
+            this.input.keyboard.on('keydown-L', () => {
+              this.leaderboardTitle.setVisible(!this.leaderboardTitle.visible);
+              this.leaderboardText.setVisible(!this.leaderboardText.visible);
+            });
+
+            // Handle window resize for leaderboard positioning
+            this.scale.on('resize', updateLeaderboardPosition);
 
             // Initialize game object collections
             this.players = new Map();
@@ -234,6 +305,9 @@ const Game = ({ playerName }) => {
                   }
                 }
               });
+
+              // Update leaderboard after all players are processed
+              this.updateLeaderboard();
 
               // Handle flies
               state.flies.forEach(fly => {
@@ -397,7 +471,6 @@ const Game = ({ playerName }) => {
               }
             });
 
-            // Handle player disconnection cleanup
             socket.on('playerDisconnected', (id) => {
               const player = this.players.get(id);
               if (player) {
@@ -406,6 +479,9 @@ const Game = ({ playerName }) => {
                 if (player.hpBarBackground) player.hpBarBackground.destroy();
                 player.destroy();
                 this.players.delete(id);
+                
+                // Update leaderboard after player disconnects
+                this.updateLeaderboard();
               }
             });
 
@@ -447,6 +523,9 @@ const Game = ({ playerName }) => {
                 
                 this.players.set(player.id, text);
 
+                // Update leaderboard when new player joins
+                this.updateLeaderboard();
+
                 // If this is the local player, set up camera follow
                 if (player.id === socket.id) {
                     this.localPlayer = text;
@@ -478,6 +557,9 @@ const Game = ({ playerName }) => {
                 
                 // Update name text to include level
                 player.nameText.setText(`${player.nameText.text.split(' (')[0]} (Lvl ${level})`);
+                
+                // Update leaderboard after level change
+                this.updateLeaderboard();
                 
                 if (didLevelUp) {
                   // Show level up text with special effects
