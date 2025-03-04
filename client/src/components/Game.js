@@ -103,8 +103,11 @@ const Game = ({ playerName }) => {
                   sprite.padId = pad.id; // Store the pad ID for reference
                   
                   // Add click handler for this lily pad
-                  sprite.on('pointerdown', () => {
+                  sprite.on('pointerdown', (pointer) => {
                     if (!this.localPlayer) return;
+                    
+                    // Only respond to left clicks
+                    if (pointer.button !== 0) return;
                     
                     // Check if any part of the lily pad is visible in the camera view
                     const camera = this.cameras.main;
