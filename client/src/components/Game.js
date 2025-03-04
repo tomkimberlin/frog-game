@@ -35,12 +35,30 @@ const Game = ({ playerName }) => {
           },
           create: function() {
             // Add constants for game mechanics
-            this.MAX_TONGUE_LENGTH = 150;
+            this.MAX_TONGUE_LENGTH = 300; // Increased from 150 to match lily pad jump distance
             this.TONGUE_ANIMATION_DURATION = 150;
             this.MAX_JUMP_DISTANCE = 300; // Maximum distance between lily pads for jumping
             this.tongueAnimationProgress = 0;
             this.isExtendingTongue = false;
             this.worldSize = { width: 2400, height: 1800 };
+
+            // Add updateHPBar helper function to the scene
+            this.updateHPBar = (player) => {
+              if (player.hpBar && player.maxHealth) {
+                const healthPercent = player.currentHealth / player.maxHealth;
+                const width = 50 * healthPercent;
+                player.hpBar.width = width;
+                
+                // Change color based on health percentage
+                if (healthPercent > 0.6) {
+                  player.hpBar.setFillStyle(0x00ff00); // Green
+                } else if (healthPercent > 0.3) {
+                  player.hpBar.setFillStyle(0xffff00); // Yellow
+                } else {
+                  player.hpBar.setFillStyle(0xff0000); // Red
+                }
+              }
+            };
 
             // Set up the larger world and physics bounds
             this.physics.world.setBounds(0, 0, this.worldSize.width, this.worldSize.height);
@@ -142,10 +160,30 @@ const Game = ({ playerName }) => {
                   
                   // Add name label for all players
                   const style = { font: '16px Arial', fill: '#fff', stroke: '#000000', strokeThickness: 4 };
-                  const nameText = this.add.text(player.x, player.y - 30, player.name, style);
+                  const nameText = this.add.text(player.x, player.y - 30, `${player.name} (Lvl ${player.level || 1})`, style);
                   nameText.setOrigin(0.5);
                   nameText.setDepth(3); // Above everything
                   text.nameText = nameText;
+
+                  // Add HP bar
+                  const hpBarWidth = 50;
+                  const hpBarHeight = 6;
+                  const hpBarBackground = this.add.rectangle(player.x, player.y - 20, hpBarWidth, hpBarHeight, 0x000000);
+                  const hpBar = this.add.rectangle(player.x - hpBarWidth/2, player.y - 20, hpBarWidth, hpBarHeight, 0x00ff00);
+                  hpBarBackground.setOrigin(0.5);
+                  hpBar.setOrigin(0, 0.5);
+                  hpBarBackground.setDepth(2.8);
+                  hpBar.setDepth(2.9);
+                  
+                  // Store HP bar references
+                  text.hpBarBackground = hpBarBackground;
+                  text.hpBar = hpBar;
+                  text.maxHealth = player.maxHealth || 100;
+                  text.currentHealth = player.health || 100;
+                  text.level = player.level || 1;
+                  
+                  // Update HP bar width based on health
+                  this.updateHPBar(text);
                   
                   this.players.set(player.id, text);
                   
@@ -187,6 +225,7 @@ const Game = ({ playerName }) => {
             socket.on('playerMoved', ({ id, x, y }) => {
               const player = this.players.get(id);
               if (player) {
+                // Move the player sprite
                 this.tweens.add({
                   targets: player,
                   x: x,
@@ -194,44 +233,171 @@ const Game = ({ playerName }) => {
                   duration: 500,
                   ease: 'Power2'
                 });
-                
-                if (player.nameText) {
-                  this.tweens.add({
-                    targets: player.nameText,
-                    x: x,
-                    y: y - 30, // Keep the name above the frog
-                    duration: 500,
-                    ease: 'Power2'
-                  });
-                }
+
+                // Move the name text with offset
+                this.tweens.add({
+                  targets: player.nameText,
+                  x: x,
+                  y: y - 30,
+                  duration: 500,
+                  ease: 'Power2'
+                });
+
+                // Move HP bar and background with offset
+                this.tweens.add({
+                  targets: [player.hpBarBackground, player.hpBar],
+                  x: x,
+                  y: y - 20,
+                  duration: 500,
+                  ease: 'Power2',
+                  onUpdate: () => {
+                    // Keep the HP bar aligned with its background
+                    player.hpBar.x = player.hpBarBackground.x - player.hpBar.width/2;
+                  }
+                });
               }
             });
 
-            socket.on('playerDamaged', ({ id, health }) => {
+            // Handle player being pushed into water
+            socket.on('playerPushed', ({ id, pushedBy, fromX, fromY }) => {
               const player = this.players.get(id);
               if (player) {
+                // Add splash effect
+                const splashEmitter = this.add.particles(fromX, fromY, {
+                  speed: { min: 50, max: 100 },
+                  scale: { start: 1, end: 0 },
+                  alpha: { start: 1, end: 0 },
+                  lifespan: 800,
+                  quantity: 20,
+                  tint: 0x87CEEB
+                });
+                
+                // Clean up particles after animation
+                this.time.delayedCall(1000, () => {
+                  splashEmitter.destroy();
+                });
+
+                // Make the frog bob in the water
+                this.tweens.add({
+                  targets: [player, player.nameText],
+                  y: '+=5',
+                  duration: 500,
+                  yoyo: true,
+                  repeat: 1,
+                  ease: 'Sine.inOut'
+                });
+
+                // Visual feedback
+                player.setAlpha(0.7); // Make the frog look like it's in water
+                this.time.delayedCall(1000, () => {
+                  player.setAlpha(1);
+                });
+              }
+            });
+
+            // Handle when player can move again
+            socket.on('playerCanMove', (id) => {
+              const player = this.players.get(id);
+              if (player) {
+                player.setAlpha(1);
+              }
+            });
+
+            socket.on('playerDamaged', ({ id, health, maxHealth, damage }) => {
+              const player = this.players.get(id);
+              if (player) {
+                // Flash red
                 player.setTint(0xff0000);
                 this.time.delayedCall(200, () => player.clearTint());
+                
+                // Show damage number
+                const damageText = this.add.text(player.x, player.y - 40, `-${damage}`, {
+                  font: 'bold 20px Arial',
+                  fill: '#ff0000'
+                });
+                damageText.setOrigin(0.5);
+                
+                // Animate damage number floating up and fading
+                this.tweens.add({
+                  targets: damageText,
+                  y: player.y - 80,
+                  alpha: 0,
+                  duration: 1000,
+                  ease: 'Power2',
+                  onComplete: () => damageText.destroy()
+                });
+                
+                // Update health
+                player.currentHealth = health;
+                player.maxHealth = maxHealth;
+                this.updateHPBar(player);
               }
             });
 
             socket.on('playerDied', (id) => {
               const player = this.players.get(id);
               if (player) {
-                if (player.nameText) {
-                  player.nameText.destroy();
-                }
+                // Clean up all player elements
+                if (player.nameText) player.nameText.destroy();
+                if (player.hpBar) player.hpBar.destroy();
+                if (player.hpBarBackground) player.hpBarBackground.destroy();
                 player.destroy();
                 this.players.delete(id);
+
+                // If this is the local player, show respawn UI
+                if (id === socket.id) {
+                  // Stop camera follow
+                  this.cameras.main.stopFollow();
+                  this.localPlayer = null;
+
+                  const respawnText = this.add.text(
+                    this.cameras.main.centerX,
+                    this.cameras.main.centerY,
+                    'You died!\nClick anywhere to respawn',
+                    {
+                      font: 'bold 32px Arial',
+                      fill: '#ffffff',
+                      stroke: '#000000',
+                      strokeThickness: 6,
+                      align: 'center'
+                    }
+                  );
+                  respawnText.setOrigin(0.5);
+                  respawnText.setScrollFactor(0);
+                  respawnText.setDepth(1000);
+
+                  // Create an invisible button that covers the entire game area
+                  const respawnButton = this.add.rectangle(
+                    this.cameras.main.centerX,
+                    this.cameras.main.centerY,
+                    this.cameras.main.width,
+                    this.cameras.main.height,
+                    0xffffff,
+                    0
+                  );
+                  respawnButton.setScrollFactor(0);
+                  respawnButton.setInteractive();
+                  respawnButton.setDepth(999);
+
+                  // Add click handler for respawn
+                  const respawnHandler = () => {
+                    respawnText.destroy();
+                    respawnButton.destroy();
+                    socket.emit('respawn');
+                  };
+                  
+                  respawnButton.on('pointerdown', respawnHandler);
+                }
               }
             });
 
+            // Handle player disconnection cleanup
             socket.on('playerDisconnected', (id) => {
               const player = this.players.get(id);
               if (player) {
-                if (player.nameText) {
-                  player.nameText.destroy();
-                }
+                if (player.nameText) player.nameText.destroy();
+                if (player.hpBar) player.hpBar.destroy();
+                if (player.hpBarBackground) player.hpBarBackground.destroy();
                 player.destroy();
                 this.players.delete(id);
               }
@@ -247,18 +413,49 @@ const Game = ({ playerName }) => {
                 text.setScale(player.size * 1.5);
                 text.setDepth(2); // Above flies
                 
-                // Add name label for the new player
+                // Add name and level label for the new player
                 const style = { font: '16px Arial', fill: '#fff', stroke: '#000000', strokeThickness: 4 };
-                const nameText = this.add.text(player.x, player.y - 30, player.name, style);
+                const nameText = this.add.text(player.x, player.y - 30, `${player.name} (Lvl ${player.level || 1})`, style);
                 nameText.setOrigin(0.5);
                 nameText.setDepth(3); // Above everything
                 text.nameText = nameText;
+
+                // Add HP bar
+                const hpBarWidth = 50;
+                const hpBarHeight = 6;
+                const hpBarBackground = this.add.rectangle(player.x, player.y - 20, hpBarWidth, hpBarHeight, 0x000000);
+                const hpBar = this.add.rectangle(player.x - hpBarWidth/2, player.y - 20, hpBarWidth, hpBarHeight, 0x00ff00);
+                hpBarBackground.setOrigin(0.5);
+                hpBar.setOrigin(0, 0.5);
+                hpBarBackground.setDepth(2.8);
+                hpBar.setDepth(2.9);
+                
+                // Store HP bar references
+                text.hpBarBackground = hpBarBackground;
+                text.hpBar = hpBar;
+                text.maxHealth = player.maxHealth || 100;
+                text.currentHealth = player.health || 100;
+                text.level = player.level || 1;
+                
+                // Update HP bar width based on health
+                this.updateHPBar(text);
                 
                 this.players.set(player.id, text);
+
+                // If this is the local player, set up camera follow
+                if (player.id === socket.id) {
+                    this.localPlayer = text;
+                    
+                    // Center camera on spawn point immediately
+                    this.cameras.main.centerOn(player.x, player.y);
+                    
+                    // Start following with smooth transitions
+                    this.cameras.main.startFollow(text, true, 0.1, 0.1);
+                }
               }
             });
 
-            socket.on('flyCaught', ({ flyId, playerId, size }) => {
+            socket.on('flyCaught', ({ flyId, playerId, size, health, maxHealth, level, xp, didLevelUp }) => {
               const fly = this.flies.get(flyId);
               if (fly) {
                 fly.destroy();
@@ -267,7 +464,66 @@ const Game = ({ playerName }) => {
 
               const player = this.players.get(playerId);
               if (player) {
-                player.setScale(size);
+                const oldHealth = player.currentHealth;
+                player.setScale(size * 1.5);
+                player.currentHealth = health;
+                player.maxHealth = maxHealth;
+                player.level = level;
+                this.updateHPBar(player);
+                
+                // Update name text to include level
+                player.nameText.setText(`${player.nameText.text.split(' (')[0]} (Lvl ${level})`);
+                
+                if (didLevelUp) {
+                  // Show level up text with special effects
+                  const levelUpText = this.add.text(player.x, player.y - 60, 'LEVEL UP!', {
+                    font: 'bold 24px Arial',
+                    fill: '#ffff00',
+                    stroke: '#000000',
+                    strokeThickness: 6
+                  });
+                  levelUpText.setOrigin(0.5);
+                  
+                  // Add sparkle particles for level up
+                  const particles = this.add.particles(player.x, player.y, {
+                    speed: { min: 50, max: 100 },
+                    scale: { start: 1, end: 0 },
+                    alpha: { start: 1, end: 0 },
+                    lifespan: 1000,
+                    quantity: 20,
+                    tint: 0xffff00
+                  });
+                  
+                  // Animate level up text and clean up
+                  this.tweens.add({
+                    targets: levelUpText,
+                    y: levelUpText.y - 40,
+                    alpha: 0,
+                    duration: 2000,
+                    ease: 'Power2',
+                    onComplete: () => {
+                      levelUpText.destroy();
+                      particles.destroy();
+                    }
+                  });
+                } else if (health > oldHealth) {
+                  // Show healing number if healed
+                  const healText = this.add.text(player.x, player.y - 40, `+${Math.round(health - oldHealth)}`, {
+                    font: 'bold 20px Arial',
+                    fill: '#00ff00'
+                  });
+                  healText.setOrigin(0.5);
+                  
+                  // Animate heal number floating up and fading
+                  this.tweens.add({
+                    targets: healText,
+                    y: player.y - 80,
+                    alpha: 0,
+                    duration: 1000,
+                    ease: 'Power2',
+                    onComplete: () => healText.destroy()
+                  });
+                }
               }
             });
 
@@ -436,7 +692,7 @@ const Game = ({ playerName }) => {
               return false;
             });
 
-            // Send player name to server
+            // Send player name to server and request spawn position
             socket.emit('newPlayer', playerName);
           },
           update: function() {

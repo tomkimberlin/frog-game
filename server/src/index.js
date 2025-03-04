@@ -25,6 +25,9 @@ const gameState = {
   }
 };
 
+// Store player names separately to persist through respawns
+const playerNames = new Map();
+
 // Generate initial lily pads
 function generateLilyPads() {
   const pads = [];
@@ -176,21 +179,69 @@ for (let i = 0; i < 10; i++) {
   gameState.flies.push(generateFly());
 }
 
+// Helper function to find an unoccupied lily pad
+function findUnoccupiedLilyPad() {
+  // Get all lily pads that aren't occupied by any player
+  const unoccupiedPads = gameState.lilyPads.filter(pad => {
+    return !Array.from(gameState.players.values()).some(player => 
+      player.x === pad.x && player.y === pad.y
+    );
+  });
+  
+  if (unoccupiedPads.length === 0) return gameState.lilyPads[0]; // Fallback to first pad if all are occupied
+  return unoccupiedPads[Math.floor(Math.random() * unoccupiedPads.length)];
+}
+
+function getRequiredXPForLevel(level) {
+  // Each level requires more XP than the last
+  // Level 1->2: 3 flies
+  // Level 2->3: 5 flies
+  // Level 3->4: 7 flies
+  // And so on...
+  return (level * 2) + 1;
+}
+
+function getLevelFromXP(xp) {
+  // Start at level 1 and keep checking if we have enough XP for next level
+  let level = 1;
+  let xpRequired = 0;
+  
+  while (true) {
+    xpRequired += getRequiredXPForLevel(level);
+    if (xp < xpRequired) {
+      return level;
+    }
+    level++;
+  }
+}
+
+function getSizeForLevel(level) {
+  // Start at size 0.7, each level increases size by 0.1 (reduced from 0.2)
+  return 0.7 + ((level - 1) * 0.1);
+}
+
 io.on('connection', (socket) => {
   console.log('Player connected:', socket.id);
 
   // Handle new player
   socket.on('newPlayer', (playerName) => {
-    // Find spawn pad (center pad)
-    const spawnPad = gameState.lilyPads.find(pad => pad.isSpawnPoint);
+    const spawnPad = findUnoccupiedLilyPad();
+    
+    // Store the player name
+    playerNames.set(socket.id, playerName);
     
     const player = {
       id: socket.id,
       name: playerName,
       x: spawnPad.x,
       y: spawnPad.y,
-      size: 1,
-      health: 100
+      size: 0.7, // Reduced from 1
+      health: 100,
+      maxHealth: 100,
+      isSwimming: false,
+      lastPushTime: 0,
+      level: 1,
+      xp: 0
     };
     gameState.players.set(socket.id, player);
     
@@ -206,13 +257,72 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('playerJoined', player);
   });
 
+  // Handle player respawn
+  socket.on('respawn', () => {
+    const spawnPad = findUnoccupiedLilyPad();
+    const existingPlayer = gameState.players.get(socket.id);
+    
+    const player = {
+      id: socket.id,
+      name: existingPlayer?.name || playerNames.get(socket.id) || 'Anonymous',
+      x: spawnPad.x,
+      y: spawnPad.y,
+      size: 0.7, // Reduced from 1
+      health: 100,
+      maxHealth: 100,
+      isSwimming: false,
+      lastPushTime: 0,
+      level: 1,
+      xp: 0
+    };
+    gameState.players.set(socket.id, player);
+    
+    // Broadcast respawned player to all players
+    io.emit('playerJoined', player);
+  });
+
   // Handle player movement
   socket.on('moveToLilyPad', (padId) => {
     const player = gameState.players.get(socket.id);
     if (!player) return;
+    
+    // Can't move while swimming
+    if (player.isSwimming) return;
 
     const targetPad = gameState.lilyPads.find(pad => pad.id === padId);
     if (!targetPad) return;
+
+    // Check for smaller frogs on the target pad
+    const currentTime = Date.now();
+    for (const [otherId, otherPlayer] of gameState.players.entries()) {
+      if (otherId !== socket.id && 
+          otherPlayer.x === targetPad.x && 
+          otherPlayer.y === targetPad.y && 
+          otherPlayer.size < player.size &&
+          !otherPlayer.isSwimming &&
+          currentTime - otherPlayer.lastPushTime > 2000) { // Prevent rapid pushing
+        
+        // Push the smaller frog into water
+        otherPlayer.isSwimming = true;
+        otherPlayer.lastPushTime = currentTime;
+        
+        // After 1 second, allow the frog to move again
+        setTimeout(() => {
+          if (otherPlayer.isSwimming) {
+            otherPlayer.isSwimming = false;
+            io.emit('playerCanMove', otherId);
+          }
+        }, 1000);
+        
+        // Emit push event
+        io.emit('playerPushed', {
+          id: otherId,
+          pushedBy: socket.id,
+          fromX: otherPlayer.x,
+          fromY: otherPlayer.y
+        });
+      }
+    }
 
     // Move player to the target lily pad
     player.x = targetPad.x;
@@ -226,14 +336,19 @@ io.on('connection', (socket) => {
     const target = gameState.players.get(targetId);
     
     if (attacker && target) {
-      const damage = attacker.size * 10;
-      target.health -= damage;
+      const damage = Math.round(attacker.size * 20); // Adjusted base damage to account for smaller size
+      target.health = Math.max(0, target.health - damage); // Prevent negative health
       
       if (target.health <= 0) {
         gameState.players.delete(targetId);
         io.emit('playerDied', targetId);
       } else {
-        io.emit('playerDamaged', { id: targetId, health: target.health });
+        io.emit('playerDamaged', { 
+          id: targetId, 
+          health: target.health,
+          maxHealth: target.maxHealth,
+          damage: damage 
+        });
       }
     }
   });
@@ -247,10 +362,33 @@ io.on('connection', (socket) => {
     if (flyIndex !== -1) {
       // Remove caught fly
       gameState.flies.splice(flyIndex, 1);
-      player.size += 0.1;
-      player.health = Math.min(100, player.health + 20);
       
-      io.emit('flyCaught', { flyId, playerId: socket.id, size: player.size, health: player.health });
+      // Add XP and check for level up
+      player.xp++;
+      const newLevel = getLevelFromXP(player.xp);
+      const didLevelUp = newLevel > player.level;
+      
+      if (didLevelUp) {
+        // Level up! Update size and max health
+        player.level = newLevel;
+        player.size = getSizeForLevel(newLevel);
+        player.maxHealth = 100 + ((newLevel - 1) * 25); // Increased HP gain per level from 20 to 25
+        player.health = player.maxHealth; // Heal to full on level up
+      } else if (player.health < player.maxHealth) {
+        // If didn't level up, just heal if not at full health
+        player.health = Math.min(player.maxHealth, player.health + 30);
+      }
+      
+      io.emit('flyCaught', { 
+        flyId, 
+        playerId: socket.id, 
+        size: player.size, 
+        health: player.health,
+        maxHealth: player.maxHealth,
+        level: player.level,
+        xp: player.xp,
+        didLevelUp
+      });
       
       // Generate one new fly when one is caught
       const newFly = generateFly();
@@ -263,6 +401,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     if (gameState.players.has(socket.id)) {
       gameState.players.delete(socket.id);
+      playerNames.delete(socket.id);
       io.emit('playerDisconnected', socket.id);
     }
   });
