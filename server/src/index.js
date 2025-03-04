@@ -27,6 +27,7 @@ const gameState = {
 
 // Store player names separately to persist through respawns
 const playerNames = new Map();
+const takenUsernames = new Set();
 
 // Generate initial lily pads
 function generateLilyPads() {
@@ -229,8 +230,28 @@ io.on('connection', (socket) => {
   // Add cooldown tracking at connection level
   const lastAttackTime = new Map();
 
+  // Handle username check
+  socket.on('checkName', (name, callback) => {
+    console.log(`Checking name availability: ${name}`);
+    const isAvailable = !takenUsernames.has(name);
+    console.log(`Name "${name}" is ${isAvailable ? 'available' : 'taken'}`);
+    callback(isAvailable);
+  });
+
   // Handle new player
   socket.on('newPlayer', (playerName) => {
+    // Double-check username length and availability
+    if (playerName.length > 16 || takenUsernames.has(playerName)) {
+      console.log(`Rejecting player with invalid/taken name: ${playerName}`);
+      socket.disconnect();
+      return;
+    }
+
+    // Add username to taken set
+    takenUsernames.add(playerName);
+    socket.playerName = playerName;
+    console.log(`New player joined with name: ${playerName}`);
+
     const spawnPad = findUnoccupiedLilyPad();
     
     // Store the player name
@@ -468,6 +489,10 @@ io.on('connection', (socket) => {
     if (gameState.players.has(socket.id)) {
       gameState.players.delete(socket.id);
       playerNames.delete(socket.id);
+      // Remove username from taken set
+      if (socket.playerName) {
+        takenUsernames.delete(socket.playerName);
+      }
       io.emit('playerDisconnected', socket.id);
     }
   });

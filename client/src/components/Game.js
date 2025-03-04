@@ -751,7 +751,221 @@ const Game = ({ playerName }) => {
             });
 
             // Send player name to server and request spawn position
-            socket.emit('newPlayer', playerName);
+            const trimmedName = playerName.slice(0, 16); // Limit name to 16 chars
+            
+            // Check if name is available first
+            socket.emit('checkName', trimmedName, (isAvailable) => {
+              if (isAvailable) {
+                socket.emit('newPlayer', trimmedName);
+                // Request game state after successful join
+                socket.emit('gameState');
+              } else {
+                // Show error message if name is taken
+                const errorText = this.add.text(
+                  this.cameras.main.centerX,
+                  this.cameras.main.centerY,
+                  'Username already taken!\nPlease refresh and try a different name.',
+                  {
+                    font: 'bold 32px Arial',
+                    fill: '#ff0000',
+                    stroke: '#000000',
+                    strokeThickness: 6,
+                    align: 'center'
+                  }
+                );
+                errorText.setOrigin(0.5);
+                errorText.setScrollFactor(0);
+                errorText.setDepth(1000);
+              }
+            });
+
+            // Add timeout for game state
+            const stateTimeout = this.time.delayedCall(5000, () => {
+              const timeoutText = this.add.text(
+                this.cameras.main.centerX,
+                this.cameras.main.centerY,
+                'Failed to load game state!\nPlease refresh the page.',
+                {
+                  font: 'bold 32px Arial',
+                  fill: '#ff0000',
+                  stroke: '#000000',
+                  strokeThickness: 6,
+                  align: 'center'
+                }
+              );
+              timeoutText.setOrigin(0.5);
+              timeoutText.setScrollFactor(0);
+              timeoutText.setDepth(1000);
+            });
+
+            // Clear timeout when game state is received
+            socket.on('gameState', (state) => {
+              if (stateTimeout) {
+                stateTimeout.remove();
+              }
+              
+              if (!state) {
+                return;
+              }
+
+              // Update world size if provided
+              if (state.worldSize) {
+                this.worldSize = state.worldSize;
+                this.physics.world.setBounds(0, 0, state.worldSize.width, state.worldSize.height);
+                this.cameras.main.setBounds(0, 0, state.worldSize.width, state.worldSize.height);
+                
+                // Update background size
+                background.width = state.worldSize.width;
+                background.height = state.worldSize.height;
+                pondArea.width = state.worldSize.width - 20;
+                pondArea.height = state.worldSize.height - 20;
+              }
+
+              // Create lily pads
+              state.lilyPads.forEach(pad => {
+                if (!this.lilyPads.has(pad.id)) {
+                  const sprite = this.add.sprite(pad.x, pad.y, 'lilypad');
+                  sprite.setScale(0.5);
+                  sprite.setDepth(0); // Base layer above background
+                  sprite.setInteractive(); // Make lily pads clickable
+                  sprite.padId = pad.id; // Store the pad ID for reference
+                  
+                  // Add click handler for this lily pad
+                  sprite.on('pointerdown', (pointer) => {
+                    if (!this.localPlayer) return;
+                    
+                    // Only respond to left clicks
+                    if (pointer.button !== 0) return;
+                    
+                    // Get world coordinates of the click
+                    const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+                    
+                    // Calculate distance from click to lily pad center
+                    const dx = worldPoint.x - sprite.x;
+                    const dy = worldPoint.y - sprite.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // Get the lily pad's radius (half of the scaled width)
+                    const lilypadRadius = (sprite.width * sprite.scaleX) / 2;
+                    
+                    // Only trigger if click is within the circular radius
+                    if (distance <= lilypadRadius) {
+                      // Check if any part of the lily pad is visible in the camera view
+                      const camera = this.cameras.main;
+                      const padBounds = sprite.getBounds();
+                      const cameraView = camera.worldView;
+                      
+                      // Check if the pad's bounds intersect with the camera view
+                      const isVisible = !(padBounds.right < cameraView.x || 
+                                       padBounds.left > cameraView.right ||
+                                       padBounds.bottom < cameraView.y || 
+                                       padBounds.top > cameraView.bottom);
+                      
+                      if (isVisible) {
+                        // Check if any other frog is on this lily pad
+                        let isOccupied = false;
+                        const occupyRadius = lilypadRadius * 0.8; // Allow some margin
+                        
+                        this.players.forEach((otherPlayer, id) => {
+                          if (id !== socket.id) { // Don't check against self
+                            const playerDx = otherPlayer.x - sprite.x;
+                            const playerDy = otherPlayer.y - sprite.y;
+                            const playerDistance = Math.sqrt(playerDx * playerDx + playerDy * playerDy);
+                            
+                            if (playerDistance < occupyRadius) {
+                              isOccupied = true;
+                            }
+                          }
+                        });
+
+                        if (!isOccupied) {
+                          socket.emit('moveToLilyPad', pad.id);
+                        } else {
+                          // Show a visual feedback that the pad is occupied
+                          sprite.setTint(0xff0000);
+                          this.time.delayedCall(200, () => sprite.clearTint());
+                        }
+                      }
+                    }
+                  });
+                  
+                  this.lilyPads.set(pad.id, sprite);
+                }
+              });
+
+              // Handle players
+              state.players.forEach(player => {
+                if (!this.players.has(player.id)) {
+                  const text = this.add.text(player.x, player.y, '🐸', { 
+                    font: `${Math.round(32 * player.size)}px Arial`,
+                    align: 'center'
+                  });
+                  text.setOrigin(0.5);
+                  text.setDepth(1); // Below flies
+                  
+                  // Add name label for all players
+                  const style = { font: '16px Arial', fill: '#fff', stroke: '#000000', strokeThickness: 4 };
+                  const nameText = this.add.text(player.x, player.y - 30, `${player.name} (Lvl ${player.level || 1})`, style);
+                  nameText.setOrigin(0.5);
+                  nameText.setDepth(3); // Above everything
+                  text.nameText = nameText;
+
+                  // Add HP bar
+                  const hpBarWidth = 50;
+                  const hpBarHeight = 6;
+                  const hpBarBackground = this.add.rectangle(player.x, player.y + 20, hpBarWidth, hpBarHeight, 0x000000);
+                  const hpBar = this.add.rectangle(player.x - hpBarWidth/2, player.y + 20, hpBarWidth, hpBarHeight, 0x00ff00);
+                  hpBarBackground.setOrigin(0.5);
+                  hpBar.setOrigin(0, 0.5);
+                  hpBarBackground.setDepth(2.8);
+                  hpBar.setDepth(2.9);
+                  
+                  // Store HP bar references
+                  text.hpBarBackground = hpBarBackground;
+                  text.hpBar = hpBar;
+                  text.maxHealth = player.maxHealth || (50 + (player.level - 1) * 10); // Base 50 HP + 10 per level
+                  text.currentHealth = player.health || text.maxHealth;
+                  text.level = player.level || 1;
+                  
+                  // Update HP bar width based on health
+                  this.updateHPBar(text);
+                  
+                  this.players.set(player.id, text);
+                  
+                  if (player.id === socket.id) {
+                    this.localPlayer = text;
+                    // Set up camera follow with lerp (smooth follow)
+                    this.cameras.main.setZoom(1); // Ensure zoom is reset
+                    
+                    // Center camera on spawn point immediately
+                    this.cameras.main.centerOn(player.x, player.y);
+                    
+                    // Start following with smooth transitions after centering
+                    this.cameras.main.startFollow(this.localPlayer, true, 0.1, 0.1);
+                  }
+                }
+              });
+
+              // Update leaderboard after all players are processed
+              this.updateLeaderboard();
+
+              // Handle flies
+              state.flies.forEach(fly => {
+                if (!this.flies.has(fly.id)) {
+                  const text = this.add.text(fly.x, fly.y, '🪰', { 
+                    font: '24px Arial',
+                    align: 'center'
+                  });
+                  text.setOrigin(0.5);
+                  text.setDepth(2); // Above frogs
+                  
+                  // Set initial rotation from fly's angle
+                  text.rotation = fly.angle + Math.PI/2; // Offset by 90 degrees to face movement direction
+                  
+                  this.flies.set(fly.id, text);
+                }
+              });
+            });
           },
           update: function() {
             // Update game state
