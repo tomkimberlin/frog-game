@@ -44,7 +44,7 @@ const Game = ({ playerName }) => {
           create: function() {
             // Add constants for game mechanics
             this.MAX_TONGUE_LENGTH = 300;
-            this.TONGUE_ANIMATION_DURATION = 150;
+            this.TONGUE_SPEED = 1200; // pixels per second
             this.MAX_JUMP_DISTANCE = 300;
             this.tongueAnimationProgress = 0;
             this.isExtendingTongue = false;
@@ -615,6 +615,10 @@ const Game = ({ playerName }) => {
                 this.tongue = this.add.graphics();
               }
               
+              // Calculate animation duration based on actual tongue length and constant speed
+              const tongueLength = Math.min(distance, this.MAX_TONGUE_LENGTH);
+              const singleTripDuration = (tongueLength / this.TONGUE_SPEED) * 1000; // Convert to milliseconds
+              
               // Start tongue animation
               this.isExtendingTongue = true;
               this.tongueStartTime = this.time.now;
@@ -622,75 +626,12 @@ const Game = ({ playerName }) => {
                 x: tongueEndX, 
                 y: tongueEndY,
                 startX: this.localPlayer.x,
-                startY: this.localPlayer.y
+                startY: this.localPlayer.y,
+                duration: singleTripDuration // Duration for one-way trip (extend or retract)
               };
 
-              // Check for collisions with flies or other players
-              this.flies.forEach((fly, id) => {
-                // Calculate distance from fly to tongue line segment
-                const A = { x: this.localPlayer.x, y: this.localPlayer.y };
-                const B = { x: tongueEndX, y: tongueEndY };
-                const P = { x: fly.x, y: fly.y };
-                
-                // Calculate distance from point P to line segment AB
-                const AB = { x: B.x - A.x, y: B.y - A.y };
-                const AP = { x: P.x - A.x, y: P.y - A.y };
-                const ab2 = AB.x * AB.x + AB.y * AB.y;
-                const ap_ab = AP.x * AB.x + AP.y * AB.y;
-                let t = ap_ab / ab2;
-                
-                // Clamp t to line segment bounds
-                t = Math.max(0, Math.min(1, t));
-                
-                // Calculate closest point on line segment
-                const closest = {
-                  x: A.x + AB.x * t,
-                  y: A.y + AB.y * t
-                };
-                
-                // Calculate distance from fly to closest point
-                const distanceToTongue = Math.sqrt(
-                  Math.pow(P.x - closest.x, 2) + Math.pow(P.y - closest.y, 2)
-                );
-
-                // Smaller hit radius for more precise detection
-                if (distanceToTongue < 15) {  // Reduced from implied larger radius
-                  socket.emit('catchFly', id);
-                }
-              });
-
-              this.players.forEach((player, id) => {
-                if (id !== socket.id) {
-                  // Use the same precise line segment distance check for players
-                  const A = { x: this.localPlayer.x, y: this.localPlayer.y };
-                  const B = { x: tongueEndX, y: tongueEndY };
-                  const P = { x: player.x, y: player.y };
-                  
-                  const AB = { x: B.x - A.x, y: B.y - A.y };
-                  const AP = { x: P.x - A.x, y: P.y - A.y };
-                  const ab2 = AB.x * AB.x + AB.y * AB.y;
-                  const ap_ab = AP.x * AB.x + AP.y * AB.y;
-                  let t = ap_ab / ab2;
-                  
-                  t = Math.max(0, Math.min(1, t));
-                  
-                  const closest = {
-                    x: A.x + AB.x * t,
-                    y: A.y + AB.y * t
-                  };
-                  
-                  const distanceToTongue = Math.sqrt(
-                    Math.pow(P.x - closest.x, 2) + Math.pow(P.y - closest.y, 2)
-                  );
-
-                  if (distanceToTongue < 20) {  // Slightly larger hit radius for players
-                    socket.emit('tongueAttack', id);
-                  }
-                }
-              });
-
-              // Automatically clear tongue after animation
-              this.time.delayedCall(this.TONGUE_ANIMATION_DURATION * 2, () => {
+              // Automatically clear tongue after full animation (extend + retract)
+              this.time.delayedCall(singleTripDuration * 2, () => {
                 this.isExtendingTongue = false;
                 this.tongueAnimationProgress = 0;
                 if (this.tongue) {
@@ -725,7 +666,7 @@ const Game = ({ playerName }) => {
             // Update game state
             if (this.tongue && this.localPlayer && this.isExtendingTongue) {
               const elapsed = this.time.now - this.tongueStartTime;
-              const progress = Math.min(elapsed / this.TONGUE_ANIMATION_DURATION, 2);
+              const progress = Math.min(elapsed / this.tongueTarget.duration, 2);
               
               // Calculate current tongue position
               let currentX, currentY;
@@ -734,6 +675,73 @@ const Game = ({ playerName }) => {
                 // Extending phase
                 currentX = this.tongueTarget.startX + (this.tongueTarget.x - this.tongueTarget.startX) * progress;
                 currentY = this.tongueTarget.startY + (this.tongueTarget.y - this.tongueTarget.startY) * progress;
+
+                // Check for collisions with flies during extension phase only
+                this.flies.forEach((fly, id) => {
+                  // Calculate distance from fly to current tongue tip
+                  const distanceToTip = Math.sqrt(
+                    Math.pow(fly.x - currentX, 2) + Math.pow(fly.y - currentY, 2)
+                  );
+
+                  // Calculate distance from fly to tongue line segment
+                  const A = { x: this.localPlayer.x, y: this.localPlayer.y };
+                  const B = { x: currentX, y: currentY };
+                  const P = { x: fly.x, y: fly.y };
+                  
+                  const AB = { x: B.x - A.x, y: B.y - A.y };
+                  const AP = { x: P.x - A.x, y: P.y - A.y };
+                  const ab2 = AB.x * AB.x + AB.y * AB.y;
+                  const ap_ab = AP.x * AB.x + AP.y * AB.y;
+                  let t = ap_ab / ab2;
+                  t = Math.max(0, Math.min(1, t));
+                  
+                  const closest = {
+                    x: A.x + AB.x * t,
+                    y: A.y + AB.y * t
+                  };
+                  
+                  const distanceToLine = Math.sqrt(
+                    Math.pow(P.x - closest.x, 2) + Math.pow(P.y - closest.y, 2)
+                  );
+
+                  // Hit detection: either very close to tip or close to line and in front of tip
+                  if (distanceToTip < 20 || (distanceToLine < 15 && t > 0.8)) {
+                    socket.emit('catchFly', id);
+                  }
+                });
+
+                // Check for collisions with players during extension phase only
+                this.players.forEach((player, id) => {
+                  if (id !== socket.id) {
+                    const distanceToTip = Math.sqrt(
+                      Math.pow(player.x - currentX, 2) + Math.pow(player.y - currentY, 2)
+                    );
+
+                    const A = { x: this.localPlayer.x, y: this.localPlayer.y };
+                    const B = { x: currentX, y: currentY };
+                    const P = { x: player.x, y: player.y };
+                    
+                    const AB = { x: B.x - A.x, y: B.y - A.y };
+                    const AP = { x: P.x - A.x, y: P.y - A.y };
+                    const ab2 = AB.x * AB.x + AB.y * AB.y;
+                    const ap_ab = AP.x * AB.x + AP.y * AB.y;
+                    let t = ap_ab / ab2;
+                    t = Math.max(0, Math.min(1, t));
+                    
+                    const closest = {
+                      x: A.x + AB.x * t,
+                      y: A.y + AB.y * t
+                    };
+                    
+                    const distanceToLine = Math.sqrt(
+                      Math.pow(P.x - closest.x, 2) + Math.pow(P.y - closest.y, 2)
+                    );
+
+                    if (distanceToTip < 25 || (distanceToLine < 20 && t > 0.8)) {
+                      socket.emit('tongueAttack', id);
+                    }
+                  }
+                });
               } else {
                 // Retracting phase
                 const retractProgress = progress - 1;
