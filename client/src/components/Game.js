@@ -625,6 +625,8 @@ const Game = ({ playerName }) => {
               this.tongueTarget = { 
                 x: tongueEndX, 
                 y: tongueEndY,
+                worldX: tongueEndX, // Store world coordinates
+                worldY: tongueEndY,
                 startX: this.localPlayer.x,
                 startY: this.localPlayer.y,
                 duration: singleTripDuration // Duration for one-way trip (extend or retract)
@@ -673,8 +675,14 @@ const Game = ({ playerName }) => {
               
               if (progress <= 1) {
                 // Extending phase
-                currentX = this.tongueTarget.startX + (this.tongueTarget.x - this.tongueTarget.startX) * progress;
-                currentY = this.tongueTarget.startY + (this.tongueTarget.y - this.tongueTarget.startY) * progress;
+                // Use current player position as start, but maintain world target position
+                const dx = this.tongueTarget.worldX - this.localPlayer.x;
+                const dy = this.tongueTarget.worldY - this.localPlayer.y;
+                const currentDistance = Math.sqrt(dx * dx + dy * dy);
+                const currentScale = Math.min(currentDistance, this.MAX_TONGUE_LENGTH) / currentDistance;
+                
+                currentX = this.localPlayer.x + dx * progress * currentScale;
+                currentY = this.localPlayer.y + dy * progress * currentScale;
 
                 // Check for collisions with flies during extension phase only
                 this.flies.forEach((fly, id) => {
@@ -745,8 +753,16 @@ const Game = ({ playerName }) => {
               } else {
                 // Retracting phase
                 const retractProgress = progress - 1;
-                currentX = this.tongueTarget.x + (this.tongueTarget.startX - this.tongueTarget.x) * retractProgress;
-                currentY = this.tongueTarget.y + (this.tongueTarget.startY - this.tongueTarget.y) * retractProgress;
+                const dx = this.tongueTarget.worldX - this.localPlayer.x;
+                const dy = this.tongueTarget.worldY - this.localPlayer.y;
+                const currentDistance = Math.sqrt(dx * dx + dy * dy);
+                const currentScale = Math.min(currentDistance, this.MAX_TONGUE_LENGTH) / currentDistance;
+                
+                const extendedX = this.localPlayer.x + dx * currentScale;
+                const extendedY = this.localPlayer.y + dy * currentScale;
+                
+                currentX = extendedX + (this.localPlayer.x - extendedX) * retractProgress;
+                currentY = extendedY + (this.localPlayer.y - extendedY) * retractProgress;
               }
 
               // Draw tongue
