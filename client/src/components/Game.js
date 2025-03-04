@@ -9,6 +9,14 @@ const Game = ({ playerName }) => {
   const gameInstance = useRef(null);
 
   useEffect(() => {
+    // Disable right click on the entire document
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+      return false;
+    };
+    
+    document.addEventListener('contextmenu', handleContextMenu);
+    
     if (!gameInstance.current) {
       const config = {
         type: Phaser.AUTO,
@@ -710,17 +718,6 @@ const Game = ({ playerName }) => {
               }
             });
 
-            // Prevent context menu on right click (both ways to be thorough)
-            this.input.on('contextmenu', function (e) {
-              e.preventDefault();
-              return false;
-            });
-            
-            this.game.canvas.addEventListener('contextmenu', function (e) {
-              e.preventDefault();
-              return false;
-            });
-
             // Send player name to server and request spawn position
             socket.emit('newPlayer', playerName);
           },
@@ -765,6 +762,8 @@ const Game = ({ playerName }) => {
         gameInstance.current.destroy(true);
         gameInstance.current = null;
       }
+      // Clean up the context menu handler
+      document.removeEventListener('contextmenu', handleContextMenu);
     };
   }, [playerName]);
 
