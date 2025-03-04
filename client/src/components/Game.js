@@ -35,12 +35,20 @@ const Game = ({ playerName }) => {
           },
           create: function() {
             // Add constants for game mechanics
-            this.MAX_TONGUE_LENGTH = 300; // Increased from 150 to match lily pad jump distance
+            this.MAX_TONGUE_LENGTH = 300;
             this.TONGUE_ANIMATION_DURATION = 150;
-            this.MAX_JUMP_DISTANCE = 300; // Maximum distance between lily pads for jumping
+            this.MAX_JUMP_DISTANCE = 300;
             this.tongueAnimationProgress = 0;
             this.isExtendingTongue = false;
             this.worldSize = { width: 2400, height: 1800 };
+
+            // Create a circle texture for particles
+            const particleTexture = this.add.graphics();
+            particleTexture.lineStyle(0);
+            particleTexture.fillStyle(0xffffff, 1);
+            particleTexture.fillCircle(4, 4, 4);
+            particleTexture.generateTexture('particle', 8, 8);
+            particleTexture.destroy();
 
             // Add updateHPBar helper function to the scene
             this.updateHPBar = (player) => {
@@ -173,8 +181,8 @@ const Game = ({ playerName }) => {
                   // Add HP bar
                   const hpBarWidth = 50;
                   const hpBarHeight = 6;
-                  const hpBarBackground = this.add.rectangle(player.x, player.y - 20, hpBarWidth, hpBarHeight, 0x000000);
-                  const hpBar = this.add.rectangle(player.x - hpBarWidth/2, player.y - 20, hpBarWidth, hpBarHeight, 0x00ff00);
+                  const hpBarBackground = this.add.rectangle(player.x, player.y + 20, hpBarWidth, hpBarHeight, 0x000000);
+                  const hpBar = this.add.rectangle(player.x - hpBarWidth/2, player.y + 20, hpBarWidth, hpBarHeight, 0x00ff00);
                   hpBarBackground.setOrigin(0.5);
                   hpBar.setOrigin(0, 0.5);
                   hpBarBackground.setDepth(2.8);
@@ -252,7 +260,7 @@ const Game = ({ playerName }) => {
                 this.tweens.add({
                   targets: [player.hpBarBackground, player.hpBar],
                   x: x,
-                  y: y - 20,
+                  y: y + 20,
                   duration: 500,
                   ease: 'Power2',
                   onUpdate: () => {
@@ -428,8 +436,8 @@ const Game = ({ playerName }) => {
                 // Add HP bar
                 const hpBarWidth = 50;
                 const hpBarHeight = 6;
-                const hpBarBackground = this.add.rectangle(player.x, player.y - 20, hpBarWidth, hpBarHeight, 0x000000);
-                const hpBar = this.add.rectangle(player.x - hpBarWidth/2, player.y - 20, hpBarWidth, hpBarHeight, 0x00ff00);
+                const hpBarBackground = this.add.rectangle(player.x, player.y + 20, hpBarWidth, hpBarHeight, 0x000000);
+                const hpBar = this.add.rectangle(player.x - hpBarWidth/2, player.y + 20, hpBarWidth, hpBarHeight, 0x00ff00);
                 hpBarBackground.setOrigin(0.5);
                 hpBar.setOrigin(0, 0.5);
                 hpBarBackground.setDepth(2.8);
@@ -488,28 +496,16 @@ const Game = ({ playerName }) => {
                     strokeThickness: 6
                   });
                   levelUpText.setOrigin(0.5);
-                  
-                  // Add sparkle particles for level up
-                  const particles = this.add.particles(player.x, player.y, {
-                    speed: { min: 50, max: 100 },
-                    scale: { start: 1, end: 0 },
-                    alpha: { start: 1, end: 0 },
-                    lifespan: 1000,
-                    quantity: 20,
-                    tint: 0xffff00
-                  });
+                  levelUpText.setDepth(3);
                   
                   // Animate level up text and clean up
                   this.tweens.add({
                     targets: levelUpText,
-                    y: levelUpText.y - 40,
+                    y: player.y - 100,
                     alpha: 0,
                     duration: 2000,
                     ease: 'Power2',
-                    onComplete: () => {
-                      levelUpText.destroy();
-                      particles.destroy();
-                    }
+                    onComplete: () => levelUpText.destroy()
                   });
                 } else if (health > oldHealth) {
                   // Show healing number if healed
