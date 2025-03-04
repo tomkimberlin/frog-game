@@ -226,6 +226,9 @@ function getSizeForLevel(level) {
 io.on('connection', (socket) => {
   console.log('Player connected:', socket.id);
 
+  // Add cooldown tracking at connection level
+  const lastAttackTime = new Map();
+
   // Handle new player
   socket.on('newPlayer', (playerName) => {
     const spawnPad = findUnoccupiedLilyPad();
@@ -238,9 +241,9 @@ io.on('connection', (socket) => {
       name: playerName,
       x: spawnPad.x,
       y: spawnPad.y,
-      size: 0.7, // Reduced from 1
-      health: 100,
-      maxHealth: 100,
+      size: 0.7,
+      health: 50,
+      maxHealth: 50,
       isSwimming: false,
       lastPushTime: 0,
       level: 1,
@@ -258,6 +261,13 @@ io.on('connection', (socket) => {
 
     // Broadcast new player to all other players
     socket.broadcast.emit('playerJoined', player);
+    
+    // Ensure everyone has the correct health value
+    io.emit('playerHealthUpdate', {
+      id: socket.id,
+      health: player.health,
+      maxHealth: player.maxHealth
+    });
   });
 
   // Handle player respawn
@@ -270,9 +280,9 @@ io.on('connection', (socket) => {
       name: existingPlayer?.name || playerNames.get(socket.id) || 'Anonymous',
       x: spawnPad.x,
       y: spawnPad.y,
-      size: 0.7, // Reduced from 1
-      health: 100,
-      maxHealth: 100,
+      size: 0.7,
+      health: 50,
+      maxHealth: 50,
       isSwimming: false,
       lastPushTime: 0,
       level: 1,
@@ -282,6 +292,13 @@ io.on('connection', (socket) => {
     
     // Broadcast respawned player to all players
     io.emit('playerJoined', player);
+    
+    // Ensure everyone has the correct health value
+    io.emit('playerHealthUpdate', {
+      id: socket.id,
+      health: player.health,
+      maxHealth: player.maxHealth
+    });
   });
 
   // Handle player movement
@@ -294,6 +311,10 @@ io.on('connection', (socket) => {
 
     const targetPad = gameState.lilyPads.find(pad => pad.id === padId);
     if (!targetPad) return;
+
+    // Store current health values
+    const currentHealth = player.health;
+    const currentMaxHealth = player.maxHealth;
 
     // Check for smaller frogs on the target pad
     const currentTime = Date.now();
@@ -330,7 +351,26 @@ io.on('connection', (socket) => {
     // Move player to the target lily pad
     player.x = targetPad.x;
     player.y = targetPad.y;
-    io.emit('playerMoved', { id: socket.id, x: player.x, y: player.y });
+    
+    // Ensure health values haven't changed during movement
+    player.health = currentHealth;
+    player.maxHealth = currentMaxHealth;
+    
+    // Send both movement and health update
+    io.emit('playerMoved', { 
+      id: socket.id, 
+      x: player.x, 
+      y: player.y,
+      health: player.health,
+      maxHealth: player.maxHealth
+    });
+    
+    // Send explicit health update to ensure sync
+    io.emit('playerHealthUpdate', {
+      id: socket.id,
+      health: player.health,
+      maxHealth: player.maxHealth
+    });
   });
 
   // Handle tongue attack
@@ -338,21 +378,43 @@ io.on('connection', (socket) => {
     const attacker = gameState.players.get(socket.id);
     const target = gameState.players.get(targetId);
     
-    if (attacker && target) {
-      const damage = Math.round(attacker.size * 20); // Adjusted base damage to account for smaller size
-      target.health = Math.max(0, target.health - damage); // Prevent negative health
-      
-      if (target.health <= 0) {
-        gameState.players.delete(targetId);
-        io.emit('playerDied', targetId);
-      } else {
-        io.emit('playerDamaged', { 
-          id: targetId, 
-          health: target.health,
-          maxHealth: target.maxHealth,
-          damage: damage 
-        });
-      }
+    if (!attacker || !target) return;
+
+    // Check cooldown (500ms between attacks)
+    const now = Date.now();
+    const lastAttack = lastAttackTime.get(targetId) || 0;
+    if (now - lastAttack < 500) {
+      console.log(`[DAMAGE] Attack ignored - too soon after last attack`);
+      return;
+    }
+    lastAttackTime.set(targetId, now);
+    
+    console.log(`[DAMAGE] Before attack - Target ${target.name}: HP ${target.health}/${target.maxHealth}`);
+    
+    // Ensure health is a number and properly set
+    if (typeof target.health !== 'number') {
+      console.log(`[DAMAGE] Health was not a number, resetting to maxHealth`);
+      target.health = target.maxHealth;
+    }
+    
+    // Always do exactly 10 damage
+    const oldHealth = target.health;
+    target.health = Math.max(0, target.health - 10);
+    
+    console.log(`[DAMAGE] After attack - Target ${target.name}: HP ${target.health}/${target.maxHealth} (Damage: 10, Old HP: ${oldHealth})`);
+    
+    // If health drops to 0 or below, player dies
+    if (target.health <= 0) {
+      console.log(`[DAMAGE] Player died: ${target.name}`);
+      gameState.players.delete(targetId);
+      io.emit('playerDied', targetId);
+    } else {
+      io.emit('playerDamaged', { 
+        id: targetId, 
+        health: target.health,
+        maxHealth: target.maxHealth,
+        damage: 10
+      });
     }
   });
 
@@ -363,6 +425,8 @@ io.on('connection', (socket) => {
 
     const flyIndex = gameState.flies.findIndex(fly => fly.id === flyId);
     if (flyIndex !== -1) {
+      console.log(`[FLY] Before catch - Player ${player.name}: HP ${player.health}/${player.maxHealth}`);
+      
       // Remove caught fly
       gameState.flies.splice(flyIndex, 1);
       
@@ -372,14 +436,13 @@ io.on('connection', (socket) => {
       const didLevelUp = newLevel > player.level;
       
       if (didLevelUp) {
+        console.log(`[LEVEL] Player ${player.name} leveled up to ${newLevel}`);
         // Level up! Update size and max health
         player.level = newLevel;
         player.size = getSizeForLevel(newLevel);
-        player.maxHealth = 100 + ((newLevel - 1) * 25); // Increased HP gain per level from 20 to 25
-        player.health = player.maxHealth; // Heal to full on level up
-      } else if (player.health < player.maxHealth) {
-        // If didn't level up, just heal if not at full health
-        player.health = Math.min(player.maxHealth, player.health + 30);
+        player.maxHealth = 50 + ((newLevel - 1) * 10); // 50 base HP + 10 per level
+        player.health = player.maxHealth; // Only heal on level up
+        console.log(`[LEVEL] New stats - HP: ${player.health}/${player.maxHealth}, Size: ${player.size}`);
       }
       
       io.emit('flyCaught', { 

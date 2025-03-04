@@ -305,8 +305,8 @@ const Game = ({ playerName }) => {
                   // Store HP bar references
                   text.hpBarBackground = hpBarBackground;
                   text.hpBar = hpBar;
-                  text.maxHealth = player.maxHealth || 100;
-                  text.currentHealth = player.health || 100;
+                  text.maxHealth = player.maxHealth || (50 + (player.level - 1) * 10); // Base 50 HP + 10 per level
+                  text.currentHealth = player.health || text.maxHealth;
                   text.level = player.level || 1;
                   
                   // Update HP bar width based on health
@@ -352,6 +352,11 @@ const Game = ({ playerName }) => {
             socket.on('playerMoved', ({ id, x, y }) => {
               const player = this.players.get(id);
               if (player) {
+                // Store current health values and bar width
+                const currentHealth = player.currentHealth;
+                const maxHealth = player.maxHealth;
+                const currentBarWidth = player.hpBar.width;
+                
                 // Move the player sprite
                 this.tweens.add({
                   targets: player,
@@ -378,8 +383,15 @@ const Game = ({ playerName }) => {
                   duration: 500,
                   ease: 'Power2',
                   onUpdate: () => {
-                    // Keep the HP bar aligned with its background
-                    player.hpBar.x = player.hpBarBackground.x - player.hpBar.width/2;
+                    // Keep the HP bar aligned with its background and maintain width
+                    player.hpBar.x = player.hpBarBackground.x - 25; // Half of the total bar width (50)
+                    player.hpBar.width = currentBarWidth;
+                  },
+                  onComplete: () => {
+                    // Ensure health values are maintained
+                    player.currentHealth = currentHealth;
+                    player.maxHealth = maxHealth;
+                    this.updateHPBar(player);
                   }
                 });
               }
@@ -394,8 +406,10 @@ const Game = ({ playerName }) => {
                 
                 // Show damage number
                 const damageText = this.add.text(player.x, player.y - 40, `-${damage}`, {
-                  font: 'bold 20px Arial',
-                  fill: '#ff0000'
+                  font: 'bold 24px Arial',
+                  fill: '#ff0000',
+                  stroke: '#000000',
+                  strokeThickness: 3
                 });
                 damageText.setOrigin(0.5);
                 
@@ -410,29 +424,28 @@ const Game = ({ playerName }) => {
                 });
                 
                 // Update health
-                const oldHealth = player.currentHealth;
                 player.currentHealth = health;
                 player.maxHealth = maxHealth;
                 this.updateHPBar(player);
                 
-                if (health < oldHealth) {
-                  // Show healing number if healed
-                  const healText = this.add.text(player.x, player.y - 40, `+${Math.round(oldHealth - health)}`, {
-                    font: 'bold 20px Arial',
-                    fill: '#00ff00'
-                  });
-                  healText.setOrigin(0.5);
-                  
-                  // Animate heal number floating up and fading
-                  this.tweens.add({
-                    targets: healText,
-                    y: player.y - 80,
-                    alpha: 0,
-                    duration: 1000,
-                    ease: 'Power2',
-                    onComplete: () => healText.destroy()
-                  });
-                }
+                // Add HP text to health bar for clarity
+                const hpText = this.add.text(player.x, player.y + 30, `${Math.round(health)}/${maxHealth}`, {
+                  font: '12px Arial',
+                  fill: '#ffffff',
+                  stroke: '#000000',
+                  strokeThickness: 2
+                });
+                hpText.setOrigin(0.5);
+                hpText.setDepth(3);
+                
+                // Fade out HP text
+                this.tweens.add({
+                  targets: hpText,
+                  alpha: 0,
+                  duration: 2000,
+                  ease: 'Power2',
+                  onComplete: () => hpText.destroy()
+                });
               }
             });
 
@@ -536,8 +549,8 @@ const Game = ({ playerName }) => {
                 // Store HP bar references
                 text.hpBarBackground = hpBarBackground;
                 text.hpBar = hpBar;
-                text.maxHealth = player.maxHealth || 100;
-                text.currentHealth = player.health || 100;
+                text.maxHealth = player.maxHealth || (50 + (player.level - 1) * 10); // Base 50 HP + 10 per level
+                text.currentHealth = player.health || text.maxHealth;
                 text.level = player.level || 1;
                 
                 // Update HP bar width based on health
@@ -751,7 +764,6 @@ const Game = ({ playerName }) => {
               
               if (progress <= 1) {
                 // Extending phase
-                // Use current player position as start, but maintain world target position
                 const dx = this.tongueTarget.worldX - this.localPlayer.x;
                 const dy = this.tongueTarget.worldY - this.localPlayer.y;
                 const currentDistance = Math.sqrt(dx * dx + dy * dy);
@@ -760,70 +772,40 @@ const Game = ({ playerName }) => {
                 currentX = this.localPlayer.x + dx * progress * currentScale;
                 currentY = this.localPlayer.y + dy * progress * currentScale;
 
-                // Check for collisions with flies during extension phase only
+                // Check for collisions with flies
                 this.flies.forEach((fly, id) => {
-                  // Calculate distance from fly to current tongue tip
                   const distanceToTip = Math.sqrt(
                     Math.pow(fly.x - currentX, 2) + Math.pow(fly.y - currentY, 2)
                   );
 
-                  // Calculate distance from fly to tongue line segment
-                  const A = { x: this.localPlayer.x, y: this.localPlayer.y };
-                  const B = { x: currentX, y: currentY };
-                  const P = { x: fly.x, y: fly.y };
-                  
-                  const AB = { x: B.x - A.x, y: B.y - A.y };
-                  const AP = { x: P.x - A.x, y: P.y - A.y };
-                  const ab2 = AB.x * AB.x + AB.y * AB.y;
-                  const ap_ab = AP.x * AB.x + AP.y * AB.y;
-                  let t = ap_ab / ab2;
-                  t = Math.max(0, Math.min(1, t));
-                  
-                  const closest = {
-                    x: A.x + AB.x * t,
-                    y: A.y + AB.y * t
-                  };
-                  
-                  const distanceToLine = Math.sqrt(
-                    Math.pow(P.x - closest.x, 2) + Math.pow(P.y - closest.y, 2)
-                  );
-
-                  // Hit detection: either very close to tip or close to line and in front of tip
-                  if (distanceToTip < 20 || (distanceToLine < 15 && t > 0.8)) {
+                  if (distanceToTip < 20) {
                     socket.emit('catchFly', id);
                   }
                 });
 
-                // Check for collisions with players during extension phase only
+                // Check for collisions with players
                 this.players.forEach((player, id) => {
-                  if (id !== socket.id) {
-                    const distanceToTip = Math.sqrt(
-                      Math.pow(player.x - currentX, 2) + Math.pow(player.y - currentY, 2)
-                    );
+                  if (id === socket.id) return; // Skip self
 
-                    const A = { x: this.localPlayer.x, y: this.localPlayer.y };
-                    const B = { x: currentX, y: currentY };
-                    const P = { x: player.x, y: player.y };
-                    
-                    const AB = { x: B.x - A.x, y: B.y - A.y };
-                    const AP = { x: P.x - A.x, y: P.y - A.y };
-                    const ab2 = AB.x * AB.x + AB.y * AB.y;
-                    const ap_ab = AP.x * AB.x + AP.y * AB.y;
-                    let t = ap_ab / ab2;
-                    t = Math.max(0, Math.min(1, t));
-                    
-                    const closest = {
-                      x: A.x + AB.x * t,
-                      y: A.y + AB.y * t
-                    };
-                    
-                    const distanceToLine = Math.sqrt(
-                      Math.pow(P.x - closest.x, 2) + Math.pow(P.y - closest.y, 2)
-                    );
+                  const frogSize = Math.round(32 * player.scale);
+                  const hitRadius = (frogSize / 2) + 5; // Half the frog size plus small 5px buffer for better feel
+                  const distanceToTip = Math.sqrt(
+                    Math.pow(player.x - currentX, 2) + Math.pow(player.y - currentY, 2)
+                  );
 
-                    if (distanceToTip < 25 || (distanceToLine < 20 && t > 0.8)) {
-                      socket.emit('tongueAttack', id);
-                    }
+                  if (distanceToTip <= hitRadius) {
+                    socket.emit('tongueAttack', id);
+                    
+                    // Visual feedback at exact hit point
+                    const hitEffect = this.add.circle(currentX, currentY, 5, 0xff0000);
+                    this.tweens.add({
+                      targets: hitEffect,
+                      alpha: 0,
+                      scale: 2,
+                      duration: 200,
+                      ease: 'Power2',
+                      onComplete: () => hitEffect.destroy()
+                    });
                   }
                 });
               } else {
@@ -844,7 +826,7 @@ const Game = ({ playerName }) => {
               // Draw tongue
               this.tongue.clear();
               this.tongue.lineStyle(4, 0xff0000);
-              this.tongue.setDepth(2.5); // Between frogs and name labels
+              this.tongue.setDepth(2.5);
               this.tongue.beginPath();
               this.tongue.moveTo(this.localPlayer.x, this.localPlayer.y);
               this.tongue.lineTo(currentX, currentY);
