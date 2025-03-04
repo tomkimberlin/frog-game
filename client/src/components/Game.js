@@ -172,6 +172,13 @@ const Game = ({ playerName }) => {
                   });
                   text.setOrigin(0.5);
                   text.setDepth(1); // Ensure flies are visible above lily pads
+                  
+                  // Calculate initial rotation
+                  const dx = fly.targetX - fly.x;
+                  const dy = fly.targetY - fly.y;
+                  const angle = Math.atan2(dy, dx) + Math.PI/2; // Offset by 90 degrees
+                  text.rotation = angle;
+                  
                   this.flies.set(fly.id, text);
                 }
               });
@@ -235,6 +242,13 @@ const Game = ({ playerName }) => {
               });
               text.setOrigin(0.5);
               text.setDepth(1); // Ensure flies are visible above lily pads
+              
+              // Calculate initial rotation
+              const dx = fly.targetX - fly.x;
+              const dy = fly.targetY - fly.y;
+              const angle = Math.atan2(dy, dx) + Math.PI/2; // Offset by 90 degrees
+              text.rotation = angle;
+              
               this.flies.set(fly.id, text);
             });
 
@@ -242,8 +256,14 @@ const Game = ({ playerName }) => {
               flies.forEach(fly => {
                 const sprite = this.flies.get(fly.id);
                 if (sprite) {
+                  // Calculate angle between current position and target
+                  const dx = fly.targetX - fly.x;
+                  const dy = fly.targetY - fly.y;
+                  const angle = Math.atan2(dy, dx) + Math.PI/2; // Offset by 90 degrees
+                  
                   sprite.x = fly.x;
                   sprite.y = fly.y;
+                  sprite.rotation = angle;
                 }
               });
             });
