@@ -148,19 +148,33 @@ const Game = ({ playerName }) => {
                     // Only respond to left clicks
                     if (pointer.button !== 0) return;
                     
-                    // Check if any part of the lily pad is visible in the camera view
-                    const camera = this.cameras.main;
-                    const padBounds = sprite.getBounds();
-                    const cameraView = camera.worldView;
+                    // Get world coordinates of the click
+                    const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
                     
-                    // Check if the pad's bounds intersect with the camera view
-                    const isVisible = !(padBounds.right < cameraView.x || 
-                                     padBounds.left > cameraView.right ||
-                                     padBounds.bottom < cameraView.y || 
-                                     padBounds.top > cameraView.bottom);
+                    // Calculate distance from click to lily pad center
+                    const dx = worldPoint.x - sprite.x;
+                    const dy = worldPoint.y - sprite.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
                     
-                    if (isVisible) {
-                      socket.emit('moveToLilyPad', pad.id);
+                    // Get the lily pad's radius (half of the scaled width)
+                    const lilypadRadius = (sprite.width * sprite.scaleX) / 2;
+                    
+                    // Only trigger if click is within the circular radius
+                    if (distance <= lilypadRadius) {
+                      // Check if any part of the lily pad is visible in the camera view
+                      const camera = this.cameras.main;
+                      const padBounds = sprite.getBounds();
+                      const cameraView = camera.worldView;
+                      
+                      // Check if the pad's bounds intersect with the camera view
+                      const isVisible = !(padBounds.right < cameraView.x || 
+                                       padBounds.left > cameraView.right ||
+                                       padBounds.bottom < cameraView.y || 
+                                       padBounds.top > cameraView.bottom);
+                      
+                      if (isVisible) {
+                        socket.emit('moveToLilyPad', pad.id);
+                      }
                     }
                   });
                   
@@ -272,51 +286,6 @@ const Game = ({ playerName }) => {
                     player.hpBar.x = player.hpBarBackground.x - player.hpBar.width/2;
                   }
                 });
-              }
-            });
-
-            // Handle player being pushed into water
-            socket.on('playerPushed', ({ id, pushedBy, fromX, fromY }) => {
-              const player = this.players.get(id);
-              if (player) {
-                // Add splash effect
-                const splashEmitter = this.add.particles(fromX, fromY, {
-                  speed: { min: 50, max: 100 },
-                  scale: { start: 1, end: 0 },
-                  alpha: { start: 1, end: 0 },
-                  lifespan: 800,
-                  quantity: 20,
-                  tint: 0x87CEEB
-                });
-                
-                // Clean up particles after animation
-                this.time.delayedCall(1000, () => {
-                  splashEmitter.destroy();
-                });
-
-                // Make the frog bob in the water
-                this.tweens.add({
-                  targets: [player, player.nameText],
-                  y: '+=5',
-                  duration: 500,
-                  yoyo: true,
-                  repeat: 1,
-                  ease: 'Sine.inOut'
-                });
-
-                // Visual feedback
-                player.setAlpha(0.7); // Make the frog look like it's in water
-                this.time.delayedCall(1000, () => {
-                  player.setAlpha(1);
-                });
-              }
-            });
-
-            // Handle when player can move again
-            socket.on('playerCanMove', (id) => {
-              const player = this.players.get(id);
-              if (player) {
-                player.setAlpha(1);
               }
             });
 
@@ -606,8 +575,11 @@ const Game = ({ playerName }) => {
               const dy = y - this.localPlayer.y;
               const distance = Math.sqrt(dx * dx + dy * dy);
               
+              // Add 20% to the target distance for a more natural feel
+              const extendedDistance = distance * 1.2;
+              
               // Calculate tongue end point, limiting by MAX_TONGUE_LENGTH
-              const scale = Math.min(distance, this.MAX_TONGUE_LENGTH) / distance;
+              const scale = Math.min(extendedDistance, this.MAX_TONGUE_LENGTH) / distance;
               const tongueEndX = this.localPlayer.x + dx * scale;
               const tongueEndY = this.localPlayer.y + dy * scale;
 
@@ -616,7 +588,7 @@ const Game = ({ playerName }) => {
               }
               
               // Calculate animation duration based on actual tongue length and constant speed
-              const tongueLength = Math.min(distance, this.MAX_TONGUE_LENGTH);
+              const tongueLength = Math.min(extendedDistance, this.MAX_TONGUE_LENGTH);
               const singleTripDuration = (tongueLength / this.TONGUE_SPEED) * 1000; // Convert to milliseconds
               
               // Start tongue animation
