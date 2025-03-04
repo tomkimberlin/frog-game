@@ -142,18 +142,37 @@ function generateLilyPads() {
 
 // Generate a new fly with world bounds
 function generateFly() {
+  // Generate initial position
+  const x = Math.random() * gameState.worldSize.width;
+  const y = Math.random() * gameState.worldSize.height;
+  
+  // Always generate target far away from spawn position
+  const angle = Math.random() * Math.PI * 2;
+  const distance = 300; // Fixed distance for predictable behavior
+  
+  const targetX = x + Math.cos(angle) * distance;
+  const targetY = y + Math.sin(angle) * distance;
+  
+  // Ensure target is within bounds
+  const boundedTargetX = Math.max(0, Math.min(gameState.worldSize.width, targetX));
+  const boundedTargetY = Math.max(0, Math.min(gameState.worldSize.height, targetY));
+  
   return {
-    id: `fly-${Date.now()}`,
-    x: Math.random() * gameState.worldSize.width,
-    y: Math.random() * gameState.worldSize.height,
-    targetX: Math.random() * gameState.worldSize.width,
-    targetY: Math.random() * gameState.worldSize.height
+    id: `fly-${Date.now()}-${Math.random()}`, // Ensure unique IDs
+    x: x,
+    y: y,
+    targetX: boundedTargetX,
+    targetY: boundedTargetY,
+    speed: 2 + Math.random() * 2 // Random speed between 2 and 4
   };
 }
 
 // Initialize game state
 gameState.lilyPads = generateLilyPads();
-for (let i = 0; i < 50; i++) {  // Increased from 15 to 50 flies
+// Clear any existing flies
+gameState.flies = [];
+// Generate 10 initial flies
+for (let i = 0; i < 10; i++) {
   gameState.flies.push(generateFly());
 }
 
@@ -223,17 +242,17 @@ io.on('connection', (socket) => {
 
     const flyIndex = gameState.flies.findIndex(fly => fly.id === flyId);
     if (flyIndex !== -1) {
+      // Remove caught fly
       gameState.flies.splice(flyIndex, 1);
       player.size += 0.1;
       player.health = Math.min(100, player.health + 20);
       
       io.emit('flyCaught', { flyId, playerId: socket.id, size: player.size, health: player.health });
       
-      // Generate multiple new flies when one is caught
-      for (let i = 0; i < 3; i++) {  // Spawn 3 flies for each one caught
-        gameState.flies.push(generateFly());
-        io.emit('newFly', gameState.flies[gameState.flies.length - 1]);
-      }
+      // Generate one new fly when one is caught
+      const newFly = generateFly();
+      gameState.flies.push(newFly);
+      io.emit('newFly', newFly);
     }
   });
 
@@ -251,20 +270,34 @@ setInterval(() => {
     const dy = fly.targetY - fly.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
     
-    // Pick new target if close enough or randomly (adds unpredictability)
-    if (distance < 5 || Math.random() < 0.01) {
-      fly.targetX = Math.random() * gameState.worldSize.width;
-      fly.targetY = Math.random() * gameState.worldSize.height;
-    } else {
-      // Slow down as we get closer to target (smooth arrival)
-      const speed = Math.min(4, distance / 10);
-      fly.x += (dx / distance) * speed;
-      fly.y += (dy / distance) * speed;
+    // Pick new target when close to current target
+    if (distance < 5) {
+      const angle = Math.random() * Math.PI * 2;
+      const targetDistance = 300;
+      const newTargetX = fly.x + Math.cos(angle) * targetDistance;
+      const newTargetY = fly.y + Math.sin(angle) * targetDistance;
       
-      // Add slight random movement to prevent synchronization
-      fly.x += (Math.random() - 0.5) * 0.5;
-      fly.y += (Math.random() - 0.5) * 0.5;
+      // Keep target within bounds
+      fly.targetX = Math.max(0, Math.min(gameState.worldSize.width, newTargetX));
+      fly.targetY = Math.max(0, Math.min(gameState.worldSize.height, newTargetY));
     }
+    
+    // Always move towards target with the fly's speed
+    if (distance > 0) {  // Prevent division by zero
+      const moveX = (dx / distance) * fly.speed;
+      const moveY = (dy / distance) * fly.speed;
+      
+      fly.x += moveX;
+      fly.y += moveY;
+    }
+    
+    // Add small random movement
+    fly.x += (Math.random() - 0.5);
+    fly.y += (Math.random() - 0.5);
+    
+    // Ensure flies stay within bounds
+    fly.x = Math.max(0, Math.min(gameState.worldSize.width, fly.x));
+    fly.y = Math.max(0, Math.min(gameState.worldSize.height, fly.y));
   });
   
   io.emit('fliesUpdated', gameState.flies);

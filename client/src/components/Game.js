@@ -51,7 +51,7 @@ const Game = ({ playerName }) => {
             background.setOrigin(0, 0);
             background.setDepth(-2);
             
-            const pondArea = this.add.rectangle(10, 10, this.worldSize.width - 20, this.worldSize.height - 20, 0x4CAF50);
+            const pondArea = this.add.rectangle(10, 10, this.worldSize.width - 20, this.worldSize.height - 20, 0xADD8E6);
             pondArea.setOrigin(0, 0);
             pondArea.setDepth(-1);
 
@@ -132,18 +132,18 @@ const Game = ({ playerName }) => {
               // Handle players
               state.players.forEach(player => {
                 if (!this.players.has(player.id)) {
-                  const sprite = this.add.sprite(player.x, player.y, 'frog');
-                  sprite.setScale(player.size * 0.5);
-                  sprite.setDepth(2); // Above flies
+                  const text = this.add.text(player.x, player.y, '🐸', { 
+                    font: '32px Arial',
+                    align: 'center'
+                  });
+                  text.setOrigin(0.5);
+                  text.setScale(player.size * 1.5);
+                  text.setDepth(2); // Above flies
                   
-                  // Enable physics for the player sprite
-                  this.physics.world.enable(sprite);
-                  sprite.body.setCollideWorldBounds(true);
-                  
-                  this.players.set(player.id, sprite);
+                  this.players.set(player.id, text);
                   
                   if (player.id === socket.id) {
-                    this.localPlayer = sprite;
+                    this.localPlayer = text;
                     // Add name label
                     const style = { font: '16px Arial', fill: '#fff', stroke: '#000000', strokeThickness: 4 };
                     const nameText = this.add.text(player.x, player.y - 30, playerName, style);
@@ -166,10 +166,13 @@ const Game = ({ playerName }) => {
               // Handle flies
               state.flies.forEach(fly => {
                 if (!this.flies.has(fly.id)) {
-                  const sprite = this.add.sprite(fly.x, fly.y, 'fly');
-                  sprite.setScale(0.5);
-                  sprite.setDepth(1); // Ensure flies are visible above lily pads
-                  this.flies.set(fly.id, sprite);
+                  const text = this.add.text(fly.x, fly.y, '🪰', { 
+                    font: '24px Arial',
+                    align: 'center'
+                  });
+                  text.setOrigin(0.5);
+                  text.setDepth(1); // Ensure flies are visible above lily pads
+                  this.flies.set(fly.id, text);
                 }
               });
             });
@@ -226,10 +229,13 @@ const Game = ({ playerName }) => {
             });
 
             socket.on('newFly', (fly) => {
-              const sprite = this.add.sprite(fly.x, fly.y, 'fly');
-              sprite.setScale(0.5);
-              sprite.setDepth(1); // Ensure flies are visible above lily pads
-              this.flies.set(fly.id, sprite);
+              const text = this.add.text(fly.x, fly.y, '🪰', { 
+                font: '24px Arial',
+                align: 'center'
+              });
+              text.setOrigin(0.5);
+              text.setDepth(1); // Ensure flies are visible above lily pads
+              this.flies.set(fly.id, text);
             });
 
             socket.on('fliesUpdated', (flies) => {
