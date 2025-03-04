@@ -84,9 +84,14 @@ const Game = ({ playerName }) => {
               shadowColor: '#000000',
               shadowBlur: 4
             };
-            const instructions = this.add.text(20, 20, 'Left Click: Move to nearby lily pad\nRight Click: Extend tongue', instructionsStyle);
+            const instructions = this.add.text(20, 20, 'Left Click: Move to nearby lily pad\nRight Click: Extend tongue\nPress H to toggle instructions', instructionsStyle);
             instructions.setScrollFactor(0); // Fix to camera
             instructions.setDepth(1000); // Ensure it's always on top
+
+            // Add keyboard event for toggling instructions
+            this.input.keyboard.on('keydown-H', () => {
+              instructions.setVisible(!instructions.visible);
+            });
 
             // Initialize game object collections
             this.players = new Map();
